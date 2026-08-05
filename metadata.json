@@ -1,0 +1,6 @@
+{
+  "name": "PesaRequest - M-PESA STK Push Merchant Platform",
+  "description": "Enterprise-grade M-PESA STK Push payment request SaaS platform for Kenyan businesses with multi-branch, role-based access, real-time callbacks, analytics, and billing.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

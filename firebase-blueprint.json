@@ -1,0 +1,193 @@
+{
+  "entities": {
+    "business": {
+      "title": "Business",
+      "description": "Tenant business workspace",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "category": { "type": "string" },
+        "customCategory": { "type": "string" },
+        "paybill": { "type": "string" },
+        "tillNumber": { "type": "string" },
+        "subscriptionTier": { "type": "string" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "address": { "type": "string" },
+        "kraPin": { "type": "string" },
+        "contactEmail": { "type": "string" },
+        "contactPhone": { "type": "string" }
+      },
+      "required": ["id", "name", "contactEmail", "contactPhone"]
+    },
+    "branch": {
+      "title": "Branch",
+      "description": "Store or office location branch for a tenant business",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "businessId": { "type": "string" },
+        "name": { "type": "string" },
+        "code": { "type": "string" },
+        "location": { "type": "string" },
+        "managerName": { "type": "string" },
+        "phone": { "type": "string" },
+        "tillNumber": { "type": "string" },
+        "status": { "type": "string" },
+        "totalRevenue": { "type": "number" },
+        "transactionCount": { "type": "number" }
+      },
+      "required": ["id", "businessId", "name", "location"]
+    },
+    "user": {
+      "title": "User",
+      "description": "System or staff user account",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "role": { "type": "string" },
+        "businessId": { "type": "string" },
+        "branchId": { "type": "string" },
+        "avatar": { "type": "string" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "name", "email", "role", "businessId"]
+    },
+    "transaction": {
+      "title": "Transaction",
+      "description": "M-PESA transaction record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "mpesaReceipt": { "type": "string" },
+        "merchantRequestId": { "type": "string" },
+        "checkoutRequestId": { "type": "string" },
+        "customerPhone": { "type": "string" },
+        "customerName": { "type": "string" },
+        "amount": { "type": "number" },
+        "status": { "type": "string" },
+        "description": { "type": "string" },
+        "businessId": { "type": "string" },
+        "branchId": { "type": "string" },
+        "branchName": { "type": "string" },
+        "createdByStaffName": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "completedAt": { "type": "string" },
+        "resultCode": { "type": "number" },
+        "resultDesc": { "type": "string" }
+      },
+      "required": ["id", "customerPhone", "customerName", "amount", "status", "businessId"]
+    },
+    "customer": {
+      "title": "Customer",
+      "description": "Customer record for CRM",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "businessId": { "type": "string" },
+        "name": { "type": "string" },
+        "phone": { "type": "string" },
+        "email": { "type": "string" },
+        "totalSpent": { "type": "number" },
+        "transactionCount": { "type": "number" },
+        "category": { "type": "string" },
+        "lastTransactionAt": { "type": "string" },
+        "notes": { "type": "string" }
+      },
+      "required": ["id", "businessId", "name", "phone"]
+    },
+    "notification": {
+      "title": "Notification",
+      "description": "System or transaction notification item",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "type": { "type": "string" },
+        "title": { "type": "string" },
+        "message": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "read": { "type": "boolean" },
+        "amount": { "type": "number" },
+        "phone": { "type": "string" },
+        "transactionId": { "type": "string" }
+      },
+      "required": ["id", "type", "title", "message", "createdAt"]
+    },
+    "auditLog": {
+      "title": "AuditLog",
+      "description": "Security audit log entry",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "action": { "type": "string" },
+        "actorName": { "type": "string" },
+        "actorRole": { "type": "string" },
+        "details": { "type": "string" },
+        "ipAddress": { "type": "string" }
+      },
+      "required": ["id", "timestamp", "action", "actorName", "details"]
+    },
+    "paymentMethod": {
+      "title": "PaymentMethod",
+      "description": "Configured M-PESA payment collection method (Till, PayBill, Pochi, Send Money)",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "businessId": { "type": "string" },
+        "name": { "type": "string" },
+        "type": { "type": "string" },
+        "shortcodeOrNumber": { "type": "string" },
+        "accountNumber": { "type": "string" },
+        "passkey": { "type": "string" },
+        "isDefault": { "type": "boolean" },
+        "status": { "type": "string" },
+        "branchId": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" },
+        "notes": { "type": "string" },
+        "provider": { "type": "string" }
+      },
+      "required": ["id", "businessId", "name", "type", "shortcodeOrNumber", "status"]
+    }
+  },
+  "firestore": {
+    "/businesses/{businessId}": {
+      "schema": { "$ref": "#/entities/business" },
+      "description": "Collection of tenant businesses"
+    },
+    "/branches/{branchId}": {
+      "schema": { "$ref": "#/entities/branch" },
+      "description": "Collection of business branches"
+    },
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/user" },
+      "description": "Collection of user accounts"
+    },
+    "/transactions/{transactionId}": {
+      "schema": { "$ref": "#/entities/transaction" },
+      "description": "Collection of M-PESA transactions"
+    },
+    "/customers/{customerId}": {
+      "schema": { "$ref": "#/entities/customer" },
+      "description": "Collection of customers for CRM"
+    },
+    "/notifications/{notificationId}": {
+      "schema": { "$ref": "#/entities/notification" },
+      "description": "Collection of notifications"
+    },
+    "/auditLogs/{auditLogId}": {
+      "schema": { "$ref": "#/entities/auditLog" },
+      "description": "Collection of security audit logs"
+    },
+    "/paymentMethods/{paymentMethodId}": {
+      "schema": { "$ref": "#/entities/paymentMethod" },
+      "description": "Collection of M-PESA payment methods"
+    }
+  }
+}
