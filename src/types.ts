@@ -75,6 +75,9 @@ export interface Business {
   paybill?: string;
   tillNumber?: string;
   passkey?: string;
+  consumerKey?: string;
+  consumerSecret?: string;
+  environment?: 'SANDBOX' | 'PRODUCTION';
   logo?: string;
   subscriptionTier: SubscriptionTier;
   subscriptionRenewalDate?: string;

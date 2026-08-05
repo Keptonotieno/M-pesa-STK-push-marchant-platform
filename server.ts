@@ -509,6 +509,58 @@ async function startServer() {
   // OTP cache for onboarding verification
   const otpStore: Record<string, { code: string; expiresAt: number; lastSentAt: number }> = {};
 
+  // Resend Email Dispatch Helper
+  const sendResendEmail = async (to: string, subject: string, code: string, targetName: string) => {
+    const apiKey = process.env.RESEND_API_KEY;
+    if (!apiKey || !apiKey.trim()) {
+      console.log('[RESEND EMAIL] RESEND_API_KEY is not configured. Using internal dispatch logger.');
+      return { sent: false, reason: 'RESEND_API_KEY_MISSING' };
+    }
+
+    try {
+      const fromAddress = process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev';
+      const response = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey.trim()}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          from: fromAddress,
+          to: [to],
+          subject: subject,
+          html: `
+            <div style="font-family: Arial, sans-serif; max-width: 520px; padding: 24px; background-color: #0b1329; color: #f8fafc; border-radius: 12px; border: 1px solid #1e293b;">
+              <div style="margin-bottom: 16px;">
+                <h2 style="color: #10b981; margin: 0; font-size: 20px;">PesaRequest Security Verification</h2>
+              </div>
+              <p style="color: #cbd5e1; font-size: 15px;">Hello,</p>
+              <p style="color: #cbd5e1; font-size: 15px;">Your 6-digit verification OTP code for <strong>${targetName}</strong> is:</p>
+              <div style="font-size: 34px; font-weight: bold; letter-spacing: 8px; color: #34d399; margin: 24px 0; padding: 16px; background-color: #1e293b; text-align: center; border-radius: 8px; border: 1px solid #334155;">
+                ${code}
+              </div>
+              <p style="color: #94a3b8; font-size: 13px; margin-top: 20px;">This code will expire in 10 minutes. If you did not request this verification, please ignore this email.</p>
+              <hr style="border: 0; border-top: 1px solid #334155; margin: 24px 0;" />
+              <p style="color: #64748b; font-size: 11px; margin: 0;">PesaRequest M-PESA Safaricom Daraja Payment Gateway System</p>
+            </div>
+          `,
+        }),
+      });
+
+      const resData = await response.json();
+      if (!response.ok) {
+        const errorMsg = resData?.message || resData?.name || 'Resend API dispatch failed';
+        console.warn('[RESEND DISPATCH NOTICE]', { status: response.status, resData });
+        return { sent: false, error: resData, errorMsg };
+      }
+      console.log('[RESEND DISPATCH SUCCESS]', resData);
+      return { sent: true, data: resData };
+    } catch (err: any) {
+      console.error('[RESEND FETCH EXCEPTION]', err);
+      return { sent: false, errorMsg: err.message || 'Fetch failed' };
+    }
+  };
+
   // Endpoint to check email & phone availability
   app.post('/api/auth/check-availability', (req, res) => {
     const { email, phone } = req.body;
@@ -529,8 +581,8 @@ async function startServer() {
   });
 
   // Endpoint to send OTP via SMS / Email for onboarding
-  app.post('/api/auth/send-otp', (req, res) => {
-    const { target, type } = req.body;
+  app.post('/api/auth/send-otp', async (req, res) => {
+    const { target, type, recipientEmail } = req.body;
     if (!target) {
       return res.status(400).json({ success: false, message: 'Target phone or email is required' });
     }
@@ -557,7 +609,16 @@ async function startServer() {
       lastSentAt: Date.now(),
     };
 
-    const channelName = type === 'EMAIL' ? 'SMTP Email Gateway' : 'Safaricom SMS Gateway';
+    const targetEmail = 'keptonotieno@gmail.com';
+    let resendDispatch: { sent: boolean; reason?: string; error?: any; errorMsg?: string; data?: any } = { sent: false, reason: 'NO_EMAIL' };
+    if (targetEmail) {
+      const emailSubject = `[PesaRequest] Verification OTP Code (${type || 'SMS'}): ${code}`;
+      resendDispatch = await sendResendEmail(targetEmail, emailSubject, code, target);
+    }
+
+    const channelName = resendDispatch.sent
+      ? 'Resend Email Gateway'
+      : (type === 'EMAIL' ? 'SMTP Email Gateway' : 'Safaricom SMS Gateway');
 
     auditLogsState.unshift({
       id: 'log-' + Date.now(),
@@ -565,16 +626,17 @@ async function startServer() {
       action: type === 'EMAIL' ? 'EMAIL_OTP_SENT' : 'SMS_OTP_SENT',
       actorName: 'System Gatekeeper',
       actorRole: 'SUPPORT_STAFF',
-      details: `Generated & dispatched 6-digit OTP (${code}) to ${target} via ${channelName}. Expires in 10 minutes.`,
+      details: `Generated & dispatched 6-digit OTP (${code}) to ${target} via ${channelName}. Resend API status: ${resendDispatch.sent ? 'DELIVERED' : 'LOGGED'}.`,
       ipAddress: (req.headers['x-forwarded-for'] as string) || req.ip || '197.237.10.45',
     });
 
-    console.log(`[OTP DISPATCH] ${type || 'SMS'} OTP for ${cleanTarget}: ${code}`);
+    console.log(`[OTP DISPATCH] ${type || 'SMS'} OTP for ${cleanTarget}: ${code} | Resend: ${resendDispatch.sent}`);
 
     return res.json({
       success: true,
-      message: `${type === 'EMAIL' ? 'Email verification' : 'M-PESA Phone OTP'} code sent successfully to ${target}`,
+      message: `${type === 'EMAIL' ? 'Email verification' : 'Phone OTP'} code sent successfully to ${target}${resendDispatch.sent ? ' via Resend Email' : ''}`,
       demoCode: code,
+      resendStatus: resendDispatch.sent ? 'SENT' : 'LOGGED',
       expiresInMinutes: 10,
     });
   });
@@ -2530,10 +2592,13 @@ async function startServer() {
   app.post('/api/settings/daraja', (req, res) => {
     const tenantId = getTenantId(req);
     const tenantBiz = businessesList.find((b) => b.id === tenantId) || businessState;
-    const { paybill, tillNumber, passkey } = req.body;
-    if (paybill) tenantBiz.paybill = paybill;
-    if (tillNumber) tenantBiz.tillNumber = tillNumber;
-    if (passkey) tenantBiz.passkey = passkey;
+    const { paybill, tillNumber, passkey, consumerKey, consumerSecret, env, environment } = req.body;
+    if (paybill !== undefined) tenantBiz.paybill = paybill;
+    if (tillNumber !== undefined) tenantBiz.tillNumber = tillNumber;
+    if (passkey !== undefined) tenantBiz.passkey = passkey;
+    if (consumerKey !== undefined) tenantBiz.consumerKey = consumerKey;
+    if (consumerSecret !== undefined) tenantBiz.consumerSecret = consumerSecret;
+    if (env || environment) tenantBiz.environment = env || environment;
 
     if (tenantBiz.id === businessState.id) {
       businessState = { ...tenantBiz };

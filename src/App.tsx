@@ -582,6 +582,7 @@ export default function App() {
             <SettingsView
               business={business}
               auditLogs={auditLogs}
+              onUpdateBusiness={(updated) => setBusiness(updated)}
               onSaveSettings={async (st) => {
                 await fetch('/api/settings/daraja', {
                   method: 'POST',

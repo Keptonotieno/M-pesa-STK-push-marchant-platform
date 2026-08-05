@@ -64,9 +64,13 @@ export const TransactionsView: React.FC<Props> = ({
 
     if (searchQuery) {
       const q = searchQuery.trim().toLowerCase();
+      const qDigits = q.replace(/\D/g, '');
       const matchId = t.id ? t.id.toLowerCase().includes(q) : false;
       const matchName = t.customerName.toLowerCase().includes(q);
-      const matchPhone = t.customerPhone.includes(q);
+      const rawPhoneDigits = t.customerPhone.replace(/\D/g, '');
+      const matchPhone =
+        t.customerPhone.toLowerCase().includes(q) ||
+        (qDigits.length >= 3 && rawPhoneDigits.includes(qDigits));
       const matchReceipt = t.mpesaReceipt ? t.mpesaReceipt.toLowerCase().includes(q) : false;
       const matchDesc = t.description ? t.description.toLowerCase().includes(q) : false;
       return matchId || matchName || matchPhone || matchReceipt || matchDesc;
@@ -182,16 +186,25 @@ export const TransactionsView: React.FC<Props> = ({
       {/* Filter Toolbar */}
       <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-3">
         <div className="flex flex-col xl:flex-row gap-3 items-stretch xl:items-center justify-between">
-          {/* Search */}
-          <div className="relative w-full xl:w-72">
+          {/* Search Bar */}
+          <div className="relative w-full xl:w-80">
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search phone, receipt, or transaction ID..."
-              className="w-full pl-9 pr-4 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-xs text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-emerald-500 outline-none"
+              placeholder="Search phone (+254...), receipt (NLX...), or customer..."
+              className="w-full pl-9 pr-9 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-xs text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-emerald-500 outline-none"
             />
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="p-1 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 absolute right-2.5 top-2 transition"
+                title="Clear search"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
 
           {/* Date Range Picker Component */}
@@ -221,7 +234,11 @@ export const TransactionsView: React.FC<Props> = ({
             <div className="flex items-center gap-1">
               <button
                 onClick={() => setDatePreset('today')}
-                className="px-2.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 text-[11px] font-bold transition"
+                className={`px-2.5 py-1.5 rounded-xl text-[11px] font-bold transition ${
+                  startDate === new Date().toISOString().split('T')[0] && endDate === new Date().toISOString().split('T')[0]
+                    ? 'bg-emerald-600 text-white shadow-sm'
+                    : 'bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300'
+                }`}
               >
                 Today
               </button>
@@ -297,6 +314,39 @@ export const TransactionsView: React.FC<Props> = ({
             </select>
           </div>
         </div>
+
+        {/* Filter Summary Bar */}
+        {(searchQuery || startDate || endDate || selectedStatus !== 'ALL' || selectedBranch !== 'ALL') && (
+          <div className="pt-2 border-t border-slate-100 dark:border-slate-800/80 flex flex-wrap items-center justify-between text-xs text-slate-500 gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="font-semibold text-slate-700 dark:text-slate-300">
+                Found <strong className="text-emerald-500 font-bold">{filteredTx.length}</strong> of {transactions.length} payment records
+              </span>
+              {searchQuery && (
+                <span className="px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[11px] font-semibold flex items-center gap-1">
+                  Query: "{searchQuery}"
+                </span>
+              )}
+              {(startDate || endDate) && (
+                <span className="px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[11px] font-semibold flex items-center gap-1">
+                  Dates: {startDate || 'Any'} → {endDate || 'Any'}
+                </span>
+              )}
+            </div>
+            <button
+              onClick={() => {
+                setSearchQuery('');
+                setStartDate('');
+                setEndDate('');
+                setSelectedStatus('ALL');
+                setSelectedBranch('ALL');
+              }}
+              className="text-xs text-rose-500 hover:text-rose-600 font-bold underline transition"
+            >
+              Reset All Filters
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Feedback Toast Notification */}

@@ -16,9 +16,9 @@ export const SettingsView: React.FC<Props> = ({ business, auditLogs, onSaveSetti
   const [paybill, setPaybill] = useState(business.paybill || '522522');
   const [tillNumber, setTillNumber] = useState(business.tillNumber || '174379');
   const [passkey, setPasskey] = useState(business.passkey || 'bfb279f9aa9bdbcf158e97dd71a467cd2e0c893059b10f78e6b72ada1ed2c919');
-  const [consumerKey, setConsumerKey] = useState('dARajA20_KeY_mP3Sa_991823');
-  const [consumerSecret, setConsumerSecret] = useState('S3cr3t_P3saR3qu3st_Daraja_2026');
-  const [env, setEnv] = useState<'SANDBOX' | 'PRODUCTION'>('PRODUCTION');
+  const [consumerKey, setConsumerKey] = useState(business.consumerKey || 'dARajA20_KeY_mP3Sa_991823');
+  const [consumerSecret, setConsumerSecret] = useState(business.consumerSecret || 'S3cr3t_P3saR3qu3st_Daraja_2026');
+  const [env, setEnv] = useState<'SANDBOX' | 'PRODUCTION'>(business.environment || 'PRODUCTION');
   const [isSaved, setIsSaved] = useState(false);
   const [testResult, setTestResult] = useState<string | null>(null);
 
@@ -48,8 +48,19 @@ export const SettingsView: React.FC<Props> = ({ business, auditLogs, onSaveSetti
 
   const webhookUrl = 'https://ais-dev-k6isovulwhkhbyepvroai5-9288613014.europe-west3.run.app/api/stkpush/callback';
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    const updatedBiz: Business = {
+      ...business,
+      paybill,
+      tillNumber,
+      passkey,
+      consumerKey,
+      consumerSecret,
+      environment: env,
+    };
+    await saveBusinessToFirestore(updatedBiz);
+    if (onUpdateBusiness) onUpdateBusiness(updatedBiz);
     onSaveSettings({ paybill, tillNumber, passkey, consumerKey, consumerSecret, env });
     setIsSaved(true);
     setTimeout(() => setIsSaved(false), 3000);

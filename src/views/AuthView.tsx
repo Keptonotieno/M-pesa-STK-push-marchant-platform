@@ -50,7 +50,7 @@ export const AuthView: React.FC<Props> = ({ onLoginSuccess }) => {
   const [registerStep, setRegisterStep] = useState<number>(1);
 
   // Form Fields - Default empty for production compliance
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState('keptonotieno@gmail.com');
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
   const [businessName, setBusinessName] = useState('');
@@ -71,6 +71,18 @@ export const AuthView: React.FC<Props> = ({ onLoginSuccess }) => {
   const [isSendingEmailOtp, setIsSendingEmailOtp] = useState(false);
   const [isVerifyingPhoneOtp, setIsVerifyingPhoneOtp] = useState(false);
   const [isVerifyingEmailOtp, setIsVerifyingEmailOtp] = useState(false);
+  const [phoneCooldown, setPhoneCooldown] = useState(0);
+  const [emailCooldown, setEmailCooldown] = useState(0);
+
+  // Countdown timer for OTP resend cooldowns
+  useEffect(() => {
+    if (phoneCooldown <= 0 && emailCooldown <= 0) return;
+    const interval = setInterval(() => {
+      setPhoneCooldown((prev) => (prev > 0 ? prev - 1 : 0));
+      setEmailCooldown((prev) => (prev > 0 ? prev - 1 : 0));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [phoneCooldown, emailCooldown]);
 
   // Step 3 Subscription Plan & Billing Cycle
   const [selectedPlanTier, setSelectedPlanTier] = useState<'STARTER' | 'GROWTH' | 'ENTERPRISE'>('GROWTH');
@@ -573,6 +585,10 @@ export const AuthView: React.FC<Props> = ({ onLoginSuccess }) => {
 
   // Step 2 OTP Handlers
   const handleSendPhoneOtp = async () => {
+    if (phoneCooldown > 0) {
+      setErrorMsg(`Please wait ${phoneCooldown}s before requesting a new SMS OTP.`);
+      return;
+    }
     setIsSendingPhoneOtp(true);
     setErrorMsg('');
     setSuccessMsg('');
@@ -581,13 +597,25 @@ export const AuthView: React.FC<Props> = ({ onLoginSuccess }) => {
       const res = await fetch('/api/auth/send-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ target: formattedPhone, type: 'PHONE' }),
+        body: JSON.stringify({ target: formattedPhone, type: 'PHONE', recipientEmail: email }),
       });
       const data = await res.json();
-      if (data.success) {
+      if (res.ok && data.success) {
         setSentPhoneOtpCode('SENT');
-        setSuccessMsg(`M-PESA Phone OTP sent to ${formattedPhone}!`);
+        setPhoneCooldown(60);
+        if (data.resendStatus === 'SENT') {
+          setPhoneOtp(data.demoCode || '');
+          setSuccessMsg(`OTP sent via Resend Email to ${email} (for ${formattedPhone})! Code: ${data.demoCode}`);
+        } else if (data.demoCode) {
+          setPhoneOtp(data.demoCode);
+          setSuccessMsg(`M-PESA Phone SMS OTP sent to ${formattedPhone}! Code: ${data.demoCode}`);
+        } else {
+          setSuccessMsg(`M-PESA Phone SMS OTP dispatched to ${formattedPhone}!`);
+        }
       } else {
+        if (data.cooldownRemainingSeconds) {
+          setPhoneCooldown(data.cooldownRemainingSeconds);
+        }
         setErrorMsg(data.message || 'Failed to send Phone OTP');
       }
     } catch (err) {
@@ -612,7 +640,7 @@ export const AuthView: React.FC<Props> = ({ onLoginSuccess }) => {
         body: JSON.stringify({ target: formattedPhone, code: phoneOtp }),
       });
       const data = await res.json();
-      if (data.success) {
+      if (res.ok && data.success) {
         setPhoneVerified(true);
         saveDraftToStorage({ phoneVerified: true });
         setSuccessMsg('M-PESA Phone Number Verified Successfully! ✓');
@@ -627,6 +655,10 @@ export const AuthView: React.FC<Props> = ({ onLoginSuccess }) => {
   };
 
   const handleSendEmailOtp = async () => {
+    if (emailCooldown > 0) {
+      setErrorMsg(`Please wait ${emailCooldown}s before requesting a new Email OTP.`);
+      return;
+    }
     setIsSendingEmailOtp(true);
     setErrorMsg('');
     setSuccessMsg('');
@@ -634,13 +666,25 @@ export const AuthView: React.FC<Props> = ({ onLoginSuccess }) => {
       const res = await fetch('/api/auth/send-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ target: email, type: 'EMAIL' }),
+        body: JSON.stringify({ target: email, type: 'EMAIL', recipientEmail: email }),
       });
       const data = await res.json();
-      if (data.success) {
+      if (res.ok && data.success) {
         setSentEmailOtpCode('SENT');
-        setSuccessMsg(`Email verification OTP sent to ${email}!`);
+        setEmailCooldown(60);
+        if (data.resendStatus === 'SENT') {
+          setEmailOtp(data.demoCode || '');
+          setSuccessMsg(`Email OTP sent via Resend to ${email}! Code: ${data.demoCode}`);
+        } else if (data.demoCode) {
+          setEmailOtp(data.demoCode);
+          setSuccessMsg(`Email verification OTP sent to ${email}! Code: ${data.demoCode}`);
+        } else {
+          setSuccessMsg(`Email verification OTP dispatched to ${email}!`);
+        }
       } else {
+        if (data.cooldownRemainingSeconds) {
+          setEmailCooldown(data.cooldownRemainingSeconds);
+        }
         setErrorMsg(data.message || 'Failed to send Email OTP');
       }
     } catch (err) {
@@ -664,7 +708,7 @@ export const AuthView: React.FC<Props> = ({ onLoginSuccess }) => {
         body: JSON.stringify({ target: email, code: emailOtp }),
       });
       const data = await res.json();
-      if (data.success) {
+      if (res.ok && data.success) {
         setEmailVerified(true);
         saveDraftToStorage({ emailVerified: true });
         setSuccessMsg('Email Address Verified Successfully! ✓');
@@ -1367,12 +1411,27 @@ export const AuthView: React.FC<Props> = ({ onLoginSuccess }) => {
                         <button
                           type="button"
                           onClick={handleSendPhoneOtp}
-                          disabled={isSendingPhoneOtp}
-                          className="text-emerald-400 hover:underline font-bold flex items-center gap-1 cursor-pointer"
+                          disabled={isSendingPhoneOtp || phoneCooldown > 0}
+                          className="text-emerald-400 hover:underline font-bold flex items-center gap-1 cursor-pointer disabled:opacity-50 disabled:no-underline disabled:cursor-not-allowed"
                         >
-                          {isSendingPhoneOtp ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
-                          <span>Send M-PESA SMS OTP</span>
+                          {isSendingPhoneOtp ? (
+                            <RefreshCw className="w-3 h-3 animate-spin" />
+                          ) : (
+                            <Send className="w-3 h-3" />
+                          )}
+                          <span>
+                            {phoneCooldown > 0
+                              ? `Resend SMS OTP (${phoneCooldown}s)`
+                              : sentPhoneOtpCode === 'SENT'
+                              ? 'Resend M-PESA SMS OTP'
+                              : 'Send M-PESA SMS OTP'}
+                          </span>
                         </button>
+                        {phoneCooldown > 0 && (
+                          <span className="text-[10px] text-slate-500 font-mono">
+                            Cooldown active
+                          </span>
+                        )}
                       </div>
                     </div>
                   )}
@@ -1421,12 +1480,27 @@ export const AuthView: React.FC<Props> = ({ onLoginSuccess }) => {
                         <button
                           type="button"
                           onClick={handleSendEmailOtp}
-                          disabled={isSendingEmailOtp}
-                          className="text-emerald-400 hover:underline font-bold flex items-center gap-1 cursor-pointer"
+                          disabled={isSendingEmailOtp || emailCooldown > 0}
+                          className="text-emerald-400 hover:underline font-bold flex items-center gap-1 cursor-pointer disabled:opacity-50 disabled:no-underline disabled:cursor-not-allowed"
                         >
-                          {isSendingEmailOtp ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
-                          <span>Send Email Verification Code</span>
+                          {isSendingEmailOtp ? (
+                            <RefreshCw className="w-3 h-3 animate-spin" />
+                          ) : (
+                            <Send className="w-3 h-3" />
+                          )}
+                          <span>
+                            {emailCooldown > 0
+                              ? `Resend Email Code (${emailCooldown}s)`
+                              : sentEmailOtpCode === 'SENT'
+                              ? 'Resend Email Verification Code'
+                              : 'Send Email Verification Code'}
+                          </span>
                         </button>
+                        {emailCooldown > 0 && (
+                          <span className="text-[10px] text-slate-500 font-mono">
+                            Cooldown active
+                          </span>
+                        )}
                       </div>
                     </div>
                   )}
