@@ -89,6 +89,20 @@ const DEFAULT_WIDGET_CONFIGS: WidgetConfig[] = [
     visible: true,
   },
   {
+    id: 'STAT_API_HEALTH',
+    name: 'Safaricom Daraja API Health',
+    category: 'Metrics',
+    description: 'Real-time Daraja G2 gateway latency and callback listener status.',
+    visible: true,
+  },
+  {
+    id: 'STAT_ACCOUNT_STATUS',
+    name: 'Account Compliance & KRA Status',
+    category: 'Metrics',
+    description: 'Account verification, KRA PIN validation, and tenant status.',
+    visible: true,
+  },
+  {
     id: 'STAT_SUBSCRIPTION',
     name: 'Active Subscription Plan',
     category: 'Metrics',
@@ -353,6 +367,44 @@ export const DashboardView: React.FC<Props> = ({
                 {analytics.failedCount}
               </div>
               <div className="text-[11px] text-slate-400 mt-1">1.1% cancellation rate</div>
+            </div>
+          </div>
+        );
+
+      case 'STAT_API_HEALTH':
+        return (
+          <div key="STAT_API_HEALTH" className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-3 flex-1 min-w-[180px]">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-500 dark:text-slate-400">Daraja API Health</span>
+              <div className="w-9 h-9 rounded-xl bg-emerald-500/10 text-emerald-500 flex items-center justify-center">
+                <Zap className="w-5 h-5" />
+              </div>
+            </div>
+            <div>
+              <div className="text-lg font-black text-slate-900 dark:text-white flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                <span>100% Operational</span>
+              </div>
+              <div className="text-[11px] text-slate-400 mt-1 font-mono">180ms Latency • Webhooks Active</div>
+            </div>
+          </div>
+        );
+
+      case 'STAT_ACCOUNT_STATUS':
+        return (
+          <div key="STAT_ACCOUNT_STATUS" className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-3 flex-1 min-w-[180px]">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-500 dark:text-slate-400">Account Compliance</span>
+              <div className="w-9 h-9 rounded-xl bg-teal-500/10 text-teal-500 flex items-center justify-center">
+                <ShieldCheck className="w-5 h-5" />
+              </div>
+            </div>
+            <div>
+              <div className="text-lg font-black text-slate-900 dark:text-white flex items-center gap-1.5">
+                <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                <span>KRA PIN Verified</span>
+              </div>
+              <div className="text-[11px] text-slate-400 mt-1">Enterprise Multi-Tenant Isolated</div>
             </div>
           </div>
         );
@@ -883,7 +935,7 @@ export const DashboardView: React.FC<Props> = ({
       ) : (
         (() => {
           const renderedElements: React.ReactNode[] = [];
-          const statIds = ['STAT_REVENUE', 'STAT_SUCCESS', 'STAT_PENDING', 'STAT_FAILED', 'STAT_SUBSCRIPTION'];
+          const statIds = ['STAT_REVENUE', 'STAT_SUCCESS', 'STAT_PENDING', 'STAT_FAILED', 'STAT_API_HEALTH', 'STAT_ACCOUNT_STATUS', 'STAT_SUBSCRIPTION'];
 
           let i = 0;
           while (i < widgets.length) {

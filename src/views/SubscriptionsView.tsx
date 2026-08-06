@@ -91,6 +91,37 @@ export const SubscriptionsView: React.FC<Props> = ({ currentBusiness, onUpgradeP
     fetchSubscriptionInfo();
   }, [businessData.id, businessData.subscriptionTier, businessData.subscriptionStatus]);
 
+  // Live polling for STK Push subscription verification
+  useEffect(() => {
+    if (!stkPromptPending) return;
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/stkpush/query-status/${stkPromptPending.checkoutRequestId}`);
+        const data = await res.json();
+        if (data.success && data.status === 'SUCCESS') {
+          setToastFeedback({
+            type: 'success',
+            message: `🎉 M-PESA Payment Verified (${data.transaction?.mpesaReceipt || 'PAID'}). Workspace updated to ${stkPromptPending.planName}! All features & limits unlocked.`,
+          });
+          if (selectedPlanId) onUpgradePlan(selectedPlanId, stkPromptPending.phone);
+          setStkPromptPending(null);
+          setSelectedPlanId(null);
+          fetchSubscriptionInfo();
+        } else if (data.success && (data.status === 'FAILED' || data.status === 'CANCELLED')) {
+          setToastFeedback({
+            type: 'error',
+            message: `M-PESA Subscription payment was not completed (${data.transaction?.resultDesc || 'Cancelled'}).`,
+          });
+          setStkPromptPending(null);
+          fetchSubscriptionInfo();
+        }
+      } catch (err) {
+        // Ignore transient polling errors
+      }
+    }, 2000);
+    return () => clearInterval(interval);
+  }, [stkPromptPending]);
+
   const handleTriggerPlanChange = (plan: SubscriptionPlan) => {
     if (plan.tier === businessData.subscriptionTier && businessData.subscriptionStatus === 'ACTIVE') return;
     setSelectedPlanId(plan.id);

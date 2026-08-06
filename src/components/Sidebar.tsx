@@ -17,6 +17,7 @@ import {
   Sparkles,
   ShieldCheck,
   ChevronRight,
+  Activity,
 } from 'lucide-react';
 import { UserRole, Business } from '../types';
 
@@ -79,6 +80,8 @@ export const Sidebar: React.FC<Props> = ({
     {
       title: 'SYSTEM & HELP',
       items: [
+        { id: 'monitoring', label: 'Integration Health', icon: Activity, minRole: 'MANAGER' },
+        { id: 'audit-logs', label: 'Security & Audit Logs', icon: ShieldCheck, minRole: 'MANAGER' },
         { id: 'settings', label: 'Daraja & Settings', icon: Settings, minRole: 'MANAGER' },
         { id: 'help', label: 'Help & Support', icon: HelpCircle },
         { id: 'profile', label: 'User Profile', icon: User },

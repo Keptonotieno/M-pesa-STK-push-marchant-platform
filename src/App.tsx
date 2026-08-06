@@ -13,11 +13,14 @@ import { ReportsView } from './views/ReportsView';
 import { SubscriptionsView } from './views/SubscriptionsView';
 import { NotificationsView } from './views/NotificationsView';
 import { SettingsView } from './views/SettingsView';
+import { MonitoringView } from './views/MonitoringView';
+import { AuditLogsView } from './views/AuditLogsView';
 import { HelpView } from './views/HelpView';
 import { ProfileView } from './views/ProfileView';
 import { BusinessesView } from './views/BusinessesView';
 import { PaymentMethodsView } from './views/PaymentMethodsView';
 import { AuthView } from './views/AuthView';
+import { AlertTriangle } from 'lucide-react';
 
 import { auth, logoutFirebase } from './lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
@@ -403,6 +406,24 @@ export default function App() {
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0 min-h-screen">
+        {/* Subscription Expired / Suspended Global Banner */}
+        {business && (business.subscriptionStatus === 'EXPIRED' || business.subscriptionStatus === 'SUSPENDED') && (
+          <div className="bg-gradient-to-r from-rose-600 via-rose-700 to-amber-600 text-white text-xs px-4 py-2.5 font-bold flex items-center justify-between shadow-md z-40 border-b border-rose-500/30 animate-in slide-in-from-top duration-200">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-amber-200 shrink-0" />
+              <span>
+                <strong>Subscription {business.subscriptionStatus}:</strong> Your workspace subscription is {business.subscriptionStatus.toLowerCase()}. Payment processing operations are locked. Renew via M-PESA to restore access.
+              </span>
+            </div>
+            <button
+              onClick={() => setActiveView('subscriptions')}
+              className="bg-white text-rose-700 hover:bg-rose-50 px-3 py-1 rounded-lg text-[11px] font-black transition cursor-pointer shrink-0 shadow-sm ml-4"
+            >
+              Renew Subscription →
+            </button>
+          </div>
+        )}
+
         {/* Top Header */}
         <Header
           currentUser={currentUser}
@@ -577,6 +598,10 @@ export default function App() {
               }}
             />
           )}
+
+          {activeView === 'monitoring' && <MonitoringView business={business} />}
+
+          {activeView === 'audit-logs' && <AuditLogsView business={business} />}
 
           {activeView === 'settings' && (
             <SettingsView

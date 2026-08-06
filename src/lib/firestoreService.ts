@@ -106,10 +106,25 @@ export function subscribeToBranches(businessId: string, callback: (branches: Bra
   }
 }
 
+// Utility to strip undefined properties before saving to Firestore
+function cleanForFirestore<T extends object>(data: T): Record<string, any> {
+  const cleanData: Record<string, any> = {};
+  for (const [key, value] of Object.entries(data)) {
+    if (value !== undefined) {
+      if (value !== null && typeof value === 'object' && !Array.isArray(value) && !(value instanceof Date)) {
+        cleanData[key] = cleanForFirestore(value);
+      } else {
+        cleanData[key] = value;
+      }
+    }
+  }
+  return cleanData;
+}
+
 // Save / Sync item to Firestore
 export async function saveTransactionToFirestore(tx: Transaction) {
   try {
-    await setDoc(doc(db, 'transactions', tx.id), tx, { merge: true });
+    await setDoc(doc(db, 'transactions', tx.id), cleanForFirestore(tx), { merge: true });
   } catch (err) {
     handleFirestoreError(err, OperationType.WRITE, `transactions/${tx.id}`);
   }
@@ -117,7 +132,7 @@ export async function saveTransactionToFirestore(tx: Transaction) {
 
 export async function saveCustomerToFirestore(customer: Customer) {
   try {
-    await setDoc(doc(db, 'customers', customer.id), customer, { merge: true });
+    await setDoc(doc(db, 'customers', customer.id), cleanForFirestore(customer), { merge: true });
   } catch (err) {
     handleFirestoreError(err, OperationType.WRITE, `customers/${customer.id}`);
   }
@@ -133,7 +148,7 @@ export async function deleteCustomerFromFirestore(customerId: string) {
 
 export async function saveBranchToFirestore(branch: Branch) {
   try {
-    await setDoc(doc(db, 'branches', branch.id), branch, { merge: true });
+    await setDoc(doc(db, 'branches', branch.id), cleanForFirestore(branch), { merge: true });
   } catch (err) {
     handleFirestoreError(err, OperationType.WRITE, `branches/${branch.id}`);
   }
@@ -141,7 +156,7 @@ export async function saveBranchToFirestore(branch: Branch) {
 
 export async function saveBusinessToFirestore(business: Business) {
   try {
-    await setDoc(doc(db, 'businesses', business.id), business, { merge: true });
+    await setDoc(doc(db, 'businesses', business.id), cleanForFirestore(business), { merge: true });
   } catch (err) {
     handleFirestoreError(err, OperationType.WRITE, `businesses/${business.id}`);
   }
@@ -194,7 +209,7 @@ export async function getBusinessFromFirestore(businessId: string): Promise<Busi
 
 export async function saveUserToFirestore(user: User) {
   try {
-    await setDoc(doc(db, 'users', user.id), user, { merge: true });
+    await setDoc(doc(db, 'users', user.id), cleanForFirestore(user), { merge: true });
   } catch (err) {
     handleFirestoreError(err, OperationType.WRITE, `users/${user.id}`);
   }
@@ -223,7 +238,7 @@ export function subscribeToUser(userId: string, callback: (user: User | null) =>
 
 export async function savePaymentMethodToFirestore(method: PaymentMethodConfig) {
   try {
-    await setDoc(doc(db, 'paymentMethods', method.id), method, { merge: true });
+    await setDoc(doc(db, 'paymentMethods', method.id), cleanForFirestore(method), { merge: true });
   } catch (err) {
     handleFirestoreError(err, OperationType.WRITE, `paymentMethods/${method.id}`);
   }

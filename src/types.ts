@@ -54,6 +54,9 @@ export interface User {
   avatar?: string;
   status: 'ACTIVE' | 'INACTIVE';
   createdAt: string;
+  emailVerified?: boolean;
+  phoneVerified?: boolean;
+  isEmailVerified?: boolean;
 }
 
 export interface StkRetryPolicy {
@@ -109,19 +112,51 @@ export interface Branch {
   transactionCount: number;
 }
 
-export type MpesaPaymentMethodType = 'TILL_NUMBER' | 'PAYBILL' | 'POCHI_LA_BIASHARA' | 'SEND_MONEY' | 'BANK';
+export type MpesaPaymentMethodType = 
+  | 'TILL_NUMBER' 
+  | 'PAYBILL' 
+  | 'POCHI_LA_BIASHARA' 
+  | 'SEND_MONEY' 
+  | 'BANK' 
+  | 'STRIPE' 
+  | 'PAYPAL' 
+  | 'FLUTTERWAVE' 
+  | 'PESAPAL' 
+  | 'CARD_GATEWAY';
 
 export interface PaymentMethodConfig {
   id: string;
   businessId: string;
-  name: string; // e.g., "Main HQ Till", "PayBill Shortcode 400200", "Mama Mboga Pochi"
+  name: string; // e.g., "Main HQ Till", "Stripe USD Checkout", "PayPal Express"
   type: MpesaPaymentMethodType;
-  shortcodeOrNumber: string; // Till Number, Paybill Shortcode, or Phone Number
-  accountNumber?: string; // Account Number pattern for PayBill
+  shortcodeOrNumber: string; // Till Number, Paybill Shortcode, Phone Number, or Gateway Account ID
+  accountNumber?: string; // Account Number pattern for PayBill or settlement IBAN/account
+  
+  // Safaricom Daraja M-PESA Credentials
   passkey?: string; // Lipa Na M-PESA Online Passkey
   consumerKey?: string; // Safaricom Daraja App Consumer Key
   consumerSecret?: string; // Safaricom Daraja App Consumer Secret
-  environment?: 'SANDBOX' | 'PRODUCTION'; // Daraja API Gateway Environment
+  initiatorName?: string; // Safaricom Daraja Initiator Name for B2C/B2B/Status
+  securityCredential?: string; // Safaricom Daraja Security Credential
+  callbackUrl?: string; // Custom or system Daraja Webhook Callback Receiver URL
+  
+  // Global Gateway Credentials (Stripe, PayPal, Flutterwave, Pesapal)
+  gatewayCategory?: 'MPESA' | 'GLOBAL_GATEWAY' | 'CARD' | 'WALLET';
+  stripePublishableKey?: string;
+  stripeSecretKey?: string; // Encrypted in Firestore
+  stripeWebhookSecret?: string; // Encrypted in Firestore
+  paypalClientId?: string;
+  paypalClientSecret?: string; // Encrypted in Firestore
+  paypalMode?: 'sandbox' | 'live';
+  flutterwavePublicKey?: string;
+  flutterwaveSecretKey?: string; // Encrypted in Firestore
+  flutterwaveEncryptionKey?: string;
+  pesapalConsumerKey?: string;
+  pesapalConsumerSecret?: string; // Encrypted in Firestore
+  isEncrypted?: boolean;
+  encryptionAlgorithm?: string;
+
+  environment?: 'SANDBOX' | 'PRODUCTION'; // Gateway Environment
   darajaStatus?: 'VERIFIED' | 'TESTING' | 'PENDING' | 'DISCONNECTED';
   c2bUrlRegistered?: boolean;
   b2cReady?: boolean;
@@ -131,7 +166,7 @@ export interface PaymentMethodConfig {
   createdAt: string;
   updatedAt?: string;
   notes?: string;
-  provider?: string; // e.g. 'SAFARICOM_MPESA', 'AIRTEL_MONEY'
+  provider?: string; // e.g. 'SAFARICOM_MPESA', 'STRIPE', 'PAYPAL', 'FLUTTERWAVE', 'PESAPAL'
 }
 
 export interface Customer {
@@ -222,10 +257,13 @@ export interface AuditLog {
   businessId?: string;
   timestamp: string;
   action: string;
+  category?: 'LOGIN' | 'CONFIG' | 'PAYMENT' | 'API_REQUEST' | 'USER_ACTIVITY' | 'SECURITY';
   actorName: string;
   actorRole: UserRole;
   details: string;
   ipAddress: string;
+  userAgent?: string;
+  status?: 'SUCCESS' | 'FAILED' | 'WARNING';
 }
 
 export interface WebhookLog {
@@ -291,3 +329,221 @@ export interface AnalyticsSummary {
   }[];
   recentTransactions: Transaction[];
 }
+
+export interface SystemErrorLog {
+  id: string;
+  timestamp: string;
+  businessId: string;
+  businessName: string;
+  category: 'DARAJA_GATEWAY' | 'WEBHOOK_DISPATCH' | 'AUTH_SECURITY' | 'DATABASE_SYNC' | 'EMAIL_SERVICE';
+  severity: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+  errorCode: string;
+  errorMessage: string;
+  actionableGuidance: string;
+  autoRetryCount: number;
+  maxRetries: number;
+  retryStatus: 'AUTOMATICALLY_RESOLVED' | 'RETRYING_BACKGROUND' | 'MAX_RETRIES_EXCEEDED' | 'PENDING_MANUAL';
+  lastRetryAt?: string;
+  requestPath: string;
+  httpMethod: string;
+}
+
+export interface PerformanceMetrics {
+  avgResponseTimeMs: number;
+  totalRequests: number;
+  cacheHitCount: number;
+  cacheMissCount: number;
+  cacheHitRatePercent: number;
+  cachedKeysCount: number;
+  activeBackgroundWorkers: number;
+  queuedBackgroundJobs: number;
+  processedBackgroundJobs: number;
+  requestsPerSecond: number;
+  databaseQueryAvgLatencyMs: number;
+  memoryUsageMb: {
+    rss: number;
+    heapTotal: number;
+    heapUsed: number;
+  };
+  recentBackgroundJobs: {
+    id: string;
+    type: string;
+    status: 'QUEUED' | 'PROCESSING' | 'COMPLETED' | 'FAILED';
+    durationMs: number;
+    createdAt: string;
+  }[];
+}
+
+export interface IdempotencyRecord {
+  id: string;
+  key: string;
+  endpoint: string;
+  status: 'PROCESSING' | 'COMPLETED' | 'REJECTED_DUPLICATE';
+  requestPayloadHash: string;
+  responseStatusCode: number;
+  responseBody: any;
+  createdAt: string;
+  expiresAt: string;
+}
+
+export interface DuplicatePaymentAlert {
+  id: string;
+  mpesaReceiptNumber?: string;
+  phone: string;
+  amount: number;
+  checkoutRequestId: string;
+  detectionReason: string;
+  actionTaken: 'BLOCKED_DUPLICATE' | 'FLAGGED_FOR_REVIEW' | 'AUTO_REFUNDED';
+  timestamp: string;
+}
+
+export interface WebhookVerificationLog {
+  id: string;
+  eventType: string;
+  merchantRequestId: string;
+  checkoutRequestId: string;
+  sourceIp: string;
+  signatureValid: boolean;
+  integrityStatus: 'VERIFIED' | 'INVALID_SIGNATURE' | 'PAYLOAD_TAMPERED' | 'IP_UNAUTHORIZED';
+  receivedAt: string;
+}
+
+export interface ReconciliationItem {
+  id: string;
+  mpesaReceiptNumber: string;
+  transactionDate: string;
+  amount: number;
+  phone: string;
+  darajaStatus: string;
+  ledgerStatus: 'MATCHED' | 'UNMATCHED_RECEIPT' | 'AMOUNT_MISMATCH' | 'PENDING_RECONCILIATION';
+  matchedInvoiceId?: string;
+  reconciledAt?: string;
+}
+
+export interface PaymentReliabilitySummary {
+  totalIdempotentRequests: number;
+  duplicateRequestsPrevented: number;
+  webhookSignaturesVerified: number;
+  failedSignaturesBlocked: number;
+  matchedReconciliationCount: number;
+  unmatchedReconciliationCount: number;
+  reconciliationAccuracyPercent: number;
+  idempotencyRecords: IdempotencyRecord[];
+  duplicateAlerts: DuplicatePaymentAlert[];
+  webhookLogs: WebhookVerificationLog[];
+  reconciliationItems: ReconciliationItem[];
+}
+
+export interface TenantIsolationTestResult {
+  testName: string;
+  category: 'DATABASE_QUERY_SCOPING' | 'API_CREDENTIAL_ISOLATION' | 'CROSS_TENANT_READ_ATTEMPT' | 'WEBHOOK_HEADER_SECURITY';
+  targetBusinessId: string;
+  attemptedByBusinessId: string;
+  status: 'PASSED_ISOLATED' | 'FAILED_LEAKAGE';
+  details: string;
+  timestamp: string;
+}
+
+export interface TenantSecuritySummary {
+  activeTenantId: string;
+  activeTenantName: string;
+  isolationScorePercent: number;
+  totalTenantEntitiesIsolated: {
+    transactions: number;
+    customers: number;
+    branches: number;
+    apiKeys: number;
+    auditLogs: number;
+  };
+  securityPolicies: {
+    dbQueryFilteringStrict: boolean;
+    headerValidationMandatory: boolean;
+    credentialsEncryptedPerTenant: boolean;
+    crossTenantAccessBlocked: boolean;
+  };
+  recentIsolationTests: TenantIsolationTestResult[];
+}
+
+export interface TenantShardMetric {
+  shardId: string;
+  region: string;
+  activeTenantsCount: number;
+  readReplicaLagMs: number;
+  status: 'OPTIMAL' | 'SCALING_UP' | 'HIGH_LOAD';
+  avgLatencyMs: number;
+}
+
+export interface WorkerQueueStatus {
+  queueName: string;
+  activeWorkers: number;
+  pendingJobs: number;
+  processedPerSec: number;
+  failureRatePercent: number;
+}
+
+export interface IntegrationPlugin {
+  id: string;
+  name: string;
+  category: 'ACCOUNTING' | 'ERP' | 'COMMERCE' | 'BANK_GATEWAY';
+  version: string;
+  status: 'ACTIVE_ISOLATED' | 'STANDBY';
+  decoupledEventBus: boolean;
+  tenantCountUsing: number;
+}
+
+export interface ScalabilitySummary {
+  architecturePattern: string;
+  supportedTenantCapacity: number;
+  activeProvisions: number;
+  globalTpsCapacity: number;
+  shards: TenantShardMetric[];
+  workerQueues: WorkerQueueStatus[];
+  plugins: IntegrationPlugin[];
+}
+
+export interface ConfigurationIssue {
+  id: string;
+  category: 'SECURITY' | 'CREDENTIALS' | 'WEBHOOK_SSL' | 'RETRY_POLICY' | 'NETWORK';
+  severity: 'CRITICAL' | 'WARNING' | 'INFO';
+  title: string;
+  description: string;
+  recommendedFix: string;
+  canAutoFix: boolean;
+  fixed: boolean;
+}
+
+export interface IntegrationHealthSummary {
+  overallStatus: 'OPERATIONAL' | 'DEGRADED' | 'OUTAGE';
+  lastCheckedAt: string;
+  apiStatus: {
+    darajaAuthStatus: 'HEALTHY' | 'UNAVAILABLE' | 'EXPIRING_SOON';
+    endpointUrl: string;
+    tokenExpiryMinutes: number;
+    latencyMs: number;
+    httpStatusCode: number;
+  };
+  callbackStatus: {
+    stkPushCallbackUrl: string;
+    reachability: 'REACHABLE' | 'UNREACHABLE';
+    deliverySuccessRate: number;
+    averageCallbackLatencyMs: number;
+    lastCallbackAt: string;
+  };
+  webhookHealth: {
+    c2bListenerStatus: 'ACTIVE' | 'PAUSED' | 'FAILED';
+    signatureVerification: 'ENABLED_PASS' | 'DISABLED_RISK';
+    queueDepth: number;
+    processed24hCount: number;
+  };
+  lastSuccessfulTransaction: {
+    receiptNumber: string;
+    amount: number;
+    phone: string;
+    completedAt: string;
+    latencyMs: number;
+    channel: string;
+  } | null;
+  issues: ConfigurationIssue[];
+}
+
+

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   ShieldCheck,
   ArrowRight,
@@ -43,8 +43,12 @@ interface Props {
 const DRAFT_STORAGE_KEY = 'pesarequest_onboarding_draft';
 
 export const AuthView: React.FC<Props> = ({ onLoginSuccess }) => {
-  // Mode: 'LOGIN' | 'REGISTER' | 'RESET_PASSWORD'
-  const [mode, setMode] = useState<'LOGIN' | 'REGISTER' | 'RESET_PASSWORD'>('LOGIN');
+  // Mode: 'LOGIN' | 'REGISTER' | 'RESET_PASSWORD' | 'LOGIN_VERIFY_OTP' | 'EMAIL_VERIFICATION'
+  const [mode, setMode] = useState<'LOGIN' | 'REGISTER' | 'RESET_PASSWORD' | 'LOGIN_VERIFY_OTP' | 'EMAIL_VERIFICATION'>('LOGIN');
+
+  // Pending authentication state for email OTP verification
+  const [pendingUser, setPendingUser] = useState<UserType | null>(null);
+  const [pendingBusiness, setPendingBusiness] = useState<Business | null>(null);
 
   // Multi-step Registration Wizard: Step 1 (Details) -> Step 2 (Dual OTP) -> Step 3 (Plan) -> Step 4 (Payment Channel & Verification)
   const [registerStep, setRegisterStep] = useState<number>(1);
@@ -83,6 +87,29 @@ export const AuthView: React.FC<Props> = ({ onLoginSuccess }) => {
     }, 1000);
     return () => clearInterval(interval);
   }, [phoneCooldown, emailCooldown]);
+
+  // Ref tracking auto-dispatch triggers for registering accounts
+  const autoDispatchedRef = useRef({ phone: false, email: false });
+
+  useEffect(() => {
+    if (registerStep === 1) {
+      autoDispatchedRef.current = { phone: false, email: false };
+    }
+  }, [registerStep]);
+
+  // Auto-dispatch BOTH Phone SMS OTP and Email OTP automatically when registering account
+  useEffect(() => {
+    if ((mode === 'REGISTER' && registerStep === 2) || mode === 'EMAIL_VERIFICATION') {
+      if (mode === 'REGISTER' && !phoneVerified && !sentPhoneOtpCode && phone && !autoDispatchedRef.current.phone && !isSendingPhoneOtp) {
+        autoDispatchedRef.current.phone = true;
+        handleSendPhoneOtp();
+      }
+      if (!emailVerified && !sentEmailOtpCode && email && !autoDispatchedRef.current.email && !isSendingEmailOtp) {
+        autoDispatchedRef.current.email = true;
+        handleSendEmailOtp();
+      }
+    }
+  }, [mode, registerStep, phoneVerified, sentPhoneOtpCode, phone, emailVerified, sentEmailOtpCode, email, isSendingPhoneOtp, isSendingEmailOtp]);
 
   // Step 3 Subscription Plan & Billing Cycle
   const [selectedPlanTier, setSelectedPlanTier] = useState<'STARTER' | 'GROWTH' | 'ENTERPRISE'>('GROWTH');
@@ -319,8 +346,12 @@ export const AuthView: React.FC<Props> = ({ onLoginSuccess }) => {
       });
 
       if (user && business) {
-        clearDraftStorage();
-        onLoginSuccess(user, business);
+        setPendingUser(user);
+        setPendingBusiness(business);
+        const targetEmail = (fbUser.email || user.email || email).toLowerCase().trim();
+        setEmail(targetEmail);
+        setMode('LOGIN_VERIFY_OTP');
+        dispatchLoginEmailOtp(targetEmail);
       } else {
         setErrorMsg('Could not initialize tenant profile.');
       }
@@ -329,6 +360,83 @@ export const AuthView: React.FC<Props> = ({ onLoginSuccess }) => {
       setErrorMsg(err?.message || 'Firebase Auth Sign-In failed.');
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  // Login Email OTP Dispatch Helper (Resend Service)
+  const dispatchLoginEmailOtp = async (targetEmail: string) => {
+    const cleanEmail = targetEmail.toLowerCase().trim();
+    setIsSendingEmailOtp(true);
+    setErrorMsg('');
+    setSuccessMsg('');
+    try {
+      const res = await fetch('/api/auth/send-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ target: cleanEmail, type: 'EMAIL', recipientEmail: cleanEmail }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setSentEmailOtpCode('SENT');
+        setEmailCooldown(60);
+        if (data.resendStatus === 'SENT') {
+          setEmailOtp(data.demoCode || '');
+          setSuccessMsg(`Security OTP dispatched via Resend Email to ${cleanEmail}! Code: ${data.demoCode}`);
+        } else if (data.demoCode) {
+          setEmailOtp(data.demoCode);
+          setSuccessMsg(`Security OTP code sent to ${cleanEmail}! Code: ${data.demoCode}`);
+        } else {
+          setSuccessMsg(`Security OTP dispatched via Resend Email to ${cleanEmail}! Please check your inbox.`);
+        }
+      } else {
+        if (data.cooldownRemainingSeconds) {
+          setEmailCooldown(data.cooldownRemainingSeconds);
+        }
+        setErrorMsg(data.message || 'Failed to dispatch Email OTP via Resend.');
+      }
+    } catch (err) {
+      setErrorMsg('Network error while requesting Email OTP dispatch.');
+    } finally {
+      setIsSendingEmailOtp(false);
+    }
+  };
+
+  // Login Email OTP Verification Handler
+  const handleVerifyLoginOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const targetEmail = (pendingUser?.email || email).toLowerCase().trim();
+    if (!emailOtp) {
+      setErrorMsg('Please enter the 6-digit OTP code sent to your email.');
+      return;
+    }
+    setIsVerifyingEmailOtp(true);
+    setErrorMsg('');
+    try {
+      const res = await fetch('/api/auth/verify-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ target: targetEmail, code: emailOtp }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setEmailVerified(true);
+        setSuccessMsg('Email OTP verified successfully via Resend! Redirecting to Merchant Dashboard...');
+        setTimeout(() => {
+          if (pendingUser && pendingBusiness) {
+            clearDraftStorage();
+            onLoginSuccess(pendingUser, pendingBusiness);
+          } else {
+            setErrorMsg('Session expired. Please sign in again.');
+            setMode('LOGIN');
+          }
+        }, 600);
+      } else {
+        setErrorMsg(data.message || 'Invalid 6-digit Email OTP code. Please check and try again.');
+      }
+    } catch (err) {
+      setErrorMsg('Failed to verify Email OTP. Please check your connection.');
+    } finally {
+      setIsVerifyingEmailOtp(false);
     }
   };
 
@@ -389,8 +497,11 @@ export const AuthView: React.FC<Props> = ({ onLoginSuccess }) => {
         if (data.success && data.user) {
           const finalUser = user || data.user;
           const finalBiz = business || data.business;
-          clearDraftStorage();
-          onLoginSuccess(finalUser, finalBiz);
+          setPendingUser(finalUser);
+          setPendingBusiness(finalBiz);
+          setEmail(finalUser.email);
+          setMode('LOGIN_VERIFY_OTP');
+          dispatchLoginEmailOtp(finalUser.email);
           return;
         }
       } catch (apiErr) {
@@ -398,8 +509,11 @@ export const AuthView: React.FC<Props> = ({ onLoginSuccess }) => {
       }
 
       if (user && business) {
-        clearDraftStorage();
-        onLoginSuccess(user, business);
+        setPendingUser(user);
+        setPendingBusiness(business);
+        setEmail(user.email);
+        setMode('LOGIN_VERIFY_OTP');
+        dispatchLoginEmailOtp(user.email);
         return;
       }
 
@@ -701,6 +815,7 @@ export const AuthView: React.FC<Props> = ({ onLoginSuccess }) => {
     }
     setIsVerifyingEmailOtp(true);
     setErrorMsg('');
+    setSuccessMsg('');
     try {
       const res = await fetch('/api/auth/verify-otp', {
         method: 'POST',
@@ -711,12 +826,78 @@ export const AuthView: React.FC<Props> = ({ onLoginSuccess }) => {
       if (res.ok && data.success) {
         setEmailVerified(true);
         saveDraftToStorage({ emailVerified: true });
-        setSuccessMsg('Email Address Verified Successfully! ✓');
+
+        // Construct verified user profile
+        const finalUser: UserType = {
+          ...(createdUser || pendingUser || {
+            id: 'usr-' + Date.now(),
+            name: fullName || 'Merchant Business Owner',
+            email: email,
+            phone: phone || '+254700000000',
+            role: 'BUSINESS_OWNER',
+            businessId: createdBusiness?.id || 'biz-' + Date.now(),
+            status: 'ACTIVE',
+            createdAt: new Date().toISOString(),
+          }),
+          emailVerified: true,
+          isEmailVerified: true,
+          status: 'ACTIVE',
+        };
+
+        // Construct verified business profile
+        const finalBiz: Business = createdBusiness || pendingBusiness || {
+          id: finalUser.businessId,
+          name: businessName || 'Merchant Business HQ',
+          category: category || 'Retail Shop',
+          paybill: '522522',
+          tillNumber: tillNumber || '174379',
+          subscriptionTier: 'GROWTH',
+          subscriptionRenewalDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+          subscriptionStatus: 'ACTIVE',
+          maxBranches: 5,
+          maxStaff: 10,
+          maxTransactions: 500000,
+          unlockedFeatures: ['STK_PUSH', 'AUTO_DISCON', 'ANALYTICS', 'MULTI_BRANCH'],
+          status: 'ACTIVE',
+          createdAt: new Date().toISOString(),
+          address: location || 'Nairobi, Kenya',
+          kraPin: kraPin || 'P051928374Z',
+          contactEmail: email,
+          contactPhone: phone || '+254700000000',
+        };
+        finalBiz.status = 'ACTIVE';
+
+        // Store user verified status in Firestore
+        await saveUserToFirestore(finalUser);
+        await saveBusinessToFirestore(finalBiz);
+
+        // Notify backend service of verification status
+        try {
+          await fetch('/api/auth/update-user-status', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId: finalUser.id, emailVerified: true, status: 'ACTIVE' }),
+          });
+        } catch (backendErr) {
+          console.warn('Backend user status sync warning:', backendErr);
+        }
+
+        setCreatedUser(finalUser);
+        setCreatedBusiness(finalBiz);
+
+        setSuccessMsg('🎉 Email Address Verified Successfully! Verified status saved to Firestore. Redirecting to Dashboard...');
+        clearDraftStorage();
+
+        // Allow navigation to DashboardView by calling onLoginSuccess
+        setTimeout(() => {
+          onLoginSuccess(finalUser, finalBiz);
+        }, 800);
       } else {
-        setErrorMsg(data.message || 'Invalid Email OTP code.');
+        setErrorMsg(data.message || 'Invalid Email OTP code. Please check your email and try again.');
       }
     } catch (err) {
-      setErrorMsg('Failed to verify Email OTP.');
+      console.error('Failed to verify Email OTP:', err);
+      setErrorMsg('Network error while verifying Email OTP code. Please try again.');
     } finally {
       setIsVerifyingEmailOtp(false);
     }
@@ -749,42 +930,72 @@ export const AuthView: React.FC<Props> = ({ onLoginSuccess }) => {
   // Step 4 Complete Onboarding & Automated Merchant Verification Trigger
   const handleCompleteOnboarding = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!createdBusiness || !createdUser) {
-      setErrorMsg('Missing tenant session context. Please go back to Step 1.');
-      return;
-    }
 
     setIsSubmitting(true);
     setErrorMsg('');
     setSuccessMsg('');
 
     try {
+      const bizId = createdBusiness?.id || pendingBusiness?.id || ('biz-' + Date.now());
+      const userId = createdUser?.id || pendingUser?.id || ('usr-' + Date.now());
+
+      const activeUser: UserType = createdUser || pendingUser || {
+        id: userId,
+        name: fullName || 'Merchant Business Owner',
+        email: email,
+        phone: phone || '+254700000000',
+        role: 'BUSINESS_OWNER',
+        businessId: bizId,
+        status: 'ACTIVE',
+        createdAt: new Date().toISOString(),
+        emailVerified: true,
+        isEmailVerified: true,
+      };
+
       const pmId = 'pm-' + Date.now();
       const pmType = paymentType === 'PAYBILL' ? 'PAYBILL' : paymentType === 'BANK' ? 'BANK' : 'TILL_NUMBER';
       const selectedShortcode = paymentType === 'PAYBILL' ? (paybillNumber || '522522') : (tillNumber || '174379');
 
       const updatedBiz: Business = {
-        ...createdBusiness,
-        paybill: paymentType === 'PAYBILL' && paybillNumber ? paybillNumber : createdBusiness.paybill,
-        tillNumber: paymentType === 'BUY_GOODS' && tillNumber ? tillNumber : createdBusiness.tillNumber,
+        id: bizId,
+        name: businessName || createdBusiness?.name || 'Merchant HQ',
+        category: category || createdBusiness?.category || 'Retail Shop',
+        paybill: paybillNumber || createdBusiness?.paybill || '522522',
+        tillNumber: tillNumber || createdBusiness?.tillNumber || '174379',
+        subscriptionTier: selectedPlanTier || createdBusiness?.subscriptionTier || 'GROWTH',
+        subscriptionRenewalDate: createdBusiness?.subscriptionRenewalDate || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+        subscriptionStatus: 'ACTIVE',
+        maxBranches: createdBusiness?.maxBranches || 5,
+        maxStaff: createdBusiness?.maxStaff || 10,
+        maxTransactions: createdBusiness?.maxTransactions || 500000,
+        unlockedFeatures: createdBusiness?.unlockedFeatures || ['STK_PUSH', 'AUTO_DISCON', 'ANALYTICS', 'MULTI_BRANCH'],
         status: 'PENDING_VERIFICATION',
+        createdAt: createdBusiness?.createdAt || new Date().toISOString(),
+        address: location || createdBusiness?.address || 'Nairobi, Kenya',
+        kraPin: kraPin || createdBusiness?.kraPin || 'P051928374Z',
+        contactEmail: email || createdBusiness?.contactEmail || '',
+        contactPhone: phone || createdBusiness?.contactPhone || '',
       };
 
       const pmConfig: PaymentMethodConfig = {
         id: pmId,
         businessId: updatedBiz.id,
         type: pmType,
-        name: paymentName || 'Default Merchant Channel',
+        name: paymentName || (paymentType === 'PAYBILL' ? 'Main Paybill Channel' : paymentType === 'BANK' ? 'Bank Settlement Account' : 'Main Store Till'),
         shortcodeOrNumber: selectedShortcode,
-        accountNumber: paymentType === 'PAYBILL' ? accountNumber || 'INV-001' : undefined,
+        accountNumber: paymentType === 'PAYBILL' ? (accountNumber || 'INV-001') : '',
         isDefault: true,
         status: 'ACTIVE',
         createdAt: new Date().toISOString(),
         provider: 'SAFARICOM_MPESA',
       };
 
+      setCreatedUser(activeUser);
+      setCreatedBusiness(updatedBiz);
+
       await saveBusinessToFirestore(updatedBiz);
       await savePaymentMethodToFirestore(pmConfig);
+      await saveUserToFirestore(activeUser);
 
       try {
         await fetch('/api/business/profile', {
@@ -875,12 +1086,16 @@ export const AuthView: React.FC<Props> = ({ onLoginSuccess }) => {
           </div>
           <h2 className="text-lg font-bold text-white tracking-tight">
             {mode === 'LOGIN' && 'Sign In to PesaRequest'}
+            {mode === 'LOGIN_VERIFY_OTP' && 'Email Security Verification'}
             {mode === 'RESET_PASSWORD' && 'Reset Merchant Password'}
+            {mode === 'EMAIL_VERIFICATION' && 'Dedicated Email Verification'}
             {mode === 'REGISTER' && `Business Onboarding (Step ${registerStep} of 4)`}
           </h2>
           <p className="text-[11px] text-slate-400 max-w-xs mx-auto leading-snug">
             {mode === 'LOGIN' && 'Multi-tenant M-PESA payment requests & automated STK Push engine.'}
+            {mode === 'LOGIN_VERIFY_OTP' && 'Verify account ownership via the 6-digit OTP sent to your email.'}
             {mode === 'RESET_PASSWORD' && 'Enter account email to receive password reset link.'}
+            {mode === 'EMAIL_VERIFICATION' && 'Enter the 6-digit OTP code sent to your email to activate your account.'}
             {mode === 'REGISTER' && registerStep === 1 && 'Create a verified merchant workspace to start accepting M-PESA.'}
             {mode === 'REGISTER' && registerStep === 2 && 'Verify ownership of your M-PESA phone number and email address.'}
             {mode === 'REGISTER' && registerStep === 3 && 'Choose a flexible subscription plan matching your business.'}
@@ -1048,6 +1263,93 @@ export const AuthView: React.FC<Props> = ({ onLoginSuccess }) => {
           </form>
         )}
 
+        {/* ----------------- MODE 4: LOGIN EMAIL OTP VERIFICATION (RESEND) ----------------- */}
+        {mode === 'LOGIN_VERIFY_OTP' && (
+          <form onSubmit={handleVerifyLoginOtp} className="space-y-3.5">
+            <div className="p-3 bg-slate-950/80 border border-emerald-500/30 rounded-xl space-y-1.5 text-left">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-white">
+                  <Mail className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                  <span className="truncate max-w-[190px]">{pendingUser?.email || email}</span>
+                </div>
+                <span className="px-2 py-0.5 rounded-full text-[9px] font-extrabold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center gap-1 shrink-0">
+                  <Sparkles className="w-3 h-3 text-emerald-400" /> Resend Email
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-400 leading-snug">
+                A 6-digit security verification OTP code was dispatched to your email via Resend. Enter the code below to open your dashboard.
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                Enter 6-Digit Email Verification Code *
+              </label>
+              <div className="relative">
+                <input
+                  type="text"
+                  required
+                  maxLength={6}
+                  value={emailOtp}
+                  onChange={(e) => setEmailOtp(e.target.value)}
+                  placeholder="123456"
+                  className="w-full text-center tracking-[0.4em] font-mono font-bold text-lg h-11 rounded-xl border border-slate-800 bg-slate-950/90 text-emerald-400 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition"
+                />
+                <Key className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              disabled={isVerifyingEmailOtp || !emailOtp}
+              className="w-full h-10 bg-emerald-500 hover:bg-emerald-400 active:scale-[0.99] text-slate-950 font-extrabold text-xs rounded-xl shadow-md shadow-emerald-500/20 flex items-center justify-center gap-2 transition cursor-pointer disabled:opacity-50"
+            >
+              {isVerifyingEmailOtp ? (
+                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <>
+                  <span>Verify OTP & Open Dashboard</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </>
+              )}
+            </button>
+
+            <div className="flex items-center justify-between text-[11px] pt-1">
+              <button
+                type="button"
+                onClick={() => dispatchLoginEmailOtp(pendingUser?.email || email)}
+                disabled={isSendingEmailOtp || emailCooldown > 0}
+                className="text-emerald-400 hover:underline font-bold flex items-center gap-1 cursor-pointer disabled:opacity-50 disabled:no-underline"
+              >
+                {isSendingEmailOtp ? (
+                  <RefreshCw className="w-3 h-3 animate-spin" />
+                ) : (
+                  <Send className="w-3 h-3" />
+                )}
+                <span>
+                  {emailCooldown > 0
+                    ? `Resend Email OTP (${emailCooldown}s)`
+                    : 'Resend Email Verification Code'}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setMode('LOGIN');
+                  setPendingUser(null);
+                  setPendingBusiness(null);
+                  setErrorMsg('');
+                  setSuccessMsg('');
+                }}
+                className="text-slate-400 hover:text-white underline font-medium cursor-pointer"
+              >
+                Cancel Sign In
+              </button>
+            </div>
+          </form>
+        )}
+
         {/* ----------------- MODE 2: FORGOT PASSWORD ----------------- */}
         {mode === 'RESET_PASSWORD' && (
           <form onSubmit={handlePasswordReset} className="space-y-4">
@@ -1086,6 +1388,112 @@ export const AuthView: React.FC<Props> = ({ onLoginSuccess }) => {
               Back to Sign In
             </button>
           </form>
+        )}
+
+        {/* ----------------- DEDICATED EMAIL VERIFICATION STATE ----------------- */}
+        {mode === 'EMAIL_VERIFICATION' && (
+          <div className="space-y-4 animate-in fade-in duration-300">
+            <div className="p-3.5 bg-slate-950/90 border border-emerald-500/30 rounded-xl space-y-2 text-left">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-white">
+                  <Mail className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <span className="truncate max-w-[200px] text-emerald-300 font-mono">{email}</span>
+                </div>
+                {emailVerified ? (
+                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
+                    <CheckCircle2 className="w-3 h-3 text-emerald-400" /> Verified
+                  </span>
+                ) : (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                    OTP Dispatched
+                  </span>
+                )}
+              </div>
+              <p className="text-[11px] text-slate-400 leading-relaxed">
+                An email verification code has been dispatched automatically. Enter the 6-digit OTP sent to your inbox to verify your status in Firestore and open the Dashboard.
+              </p>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  Enter 6-Digit Email OTP *
+                </label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    maxLength={6}
+                    value={emailOtp}
+                    onChange={(e) => setEmailOtp(e.target.value)}
+                    placeholder="123456"
+                    className="w-full text-center tracking-[0.4em] font-mono font-bold text-base h-11 rounded-xl border border-slate-800 bg-slate-950 text-emerald-400 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition placeholder:font-sans placeholder:tracking-normal placeholder:text-slate-600"
+                  />
+                  <ShieldCheck className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleVerifyEmailOtp}
+                disabled={isVerifyingEmailOtp || !emailOtp}
+                className="w-full py-3 bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 active:scale-[0.99] text-slate-950 font-extrabold text-xs rounded-xl shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2 transition cursor-pointer"
+              >
+                {isVerifyingEmailOtp ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    <span>Verifying & Saving Status...</span>
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>Verify & Open Dashboard</span>
+                  </>
+                )}
+              </button>
+
+              <div className="flex items-center justify-between text-[11px] pt-1">
+                <button
+                  type="button"
+                  onClick={handleSendEmailOtp}
+                  disabled={isSendingEmailOtp || emailCooldown > 0}
+                  className="text-emerald-400 hover:underline font-bold flex items-center gap-1 cursor-pointer disabled:opacity-50 disabled:no-underline"
+                >
+                  {isSendingEmailOtp ? (
+                    <RefreshCw className="w-3 h-3 animate-spin" />
+                  ) : (
+                    <Send className="w-3 h-3" />
+                  )}
+                  <span>
+                    {emailCooldown > 0
+                      ? `Resend Code (${emailCooldown}s)`
+                      : 'Resend Email OTP'}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setMode('REGISTER')}
+                  className="text-slate-400 hover:text-white underline font-medium cursor-pointer"
+                >
+                  Edit Registration Info
+                </button>
+              </div>
+            </div>
+
+            <div className="text-center pt-2 border-t border-slate-800/80">
+              <button
+                type="button"
+                onClick={() => {
+                  setMode('LOGIN');
+                  setErrorMsg('');
+                  setSuccessMsg('');
+                }}
+                className="text-xs text-slate-400 hover:text-emerald-400 underline font-semibold cursor-pointer"
+              >
+                Back to Sign In
+              </button>
+            </div>
+          </div>
         )}
 
         {/* ----------------- MODE 3: REGISTER & ENFORCED MULTI-STEP ONBOARDING ----------------- */}
