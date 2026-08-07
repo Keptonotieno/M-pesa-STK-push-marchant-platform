@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
 import { SendPaymentModal } from './components/SendPaymentModal';
+import { ErrorBoundary } from './components/ErrorBoundary';
 
 import { LandingPageView } from './views/LandingPageView';
 import { DashboardView } from './views/DashboardView';
@@ -72,6 +73,7 @@ export default function App() {
 
   const [isSendModalOpen, setIsSendModalOpen] = useState(false);
   const [darkMode, setDarkMode] = useState(true);
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
 
   // Sync dark mode class on document.documentElement for Tailwind dark utilities & custom CSS
   useEffect(() => {
@@ -395,13 +397,17 @@ export default function App() {
 
       {/* Sidebar Navigation */}
       {activeView !== 'landing' && (
-        <Sidebar
-          activeView={activeView}
-          onNavigate={setActiveView}
-          userRole={currentUser.role}
-          currentBusiness={business}
-          onOpenSendModal={() => setIsSendModalOpen(true)}
-        />
+        <ErrorBoundary fallbackTitle="Navigation Sidebar Recovered">
+          <Sidebar
+            activeView={activeView}
+            onNavigate={setActiveView}
+            userRole={currentUser.role}
+            currentBusiness={business}
+            onOpenSendModal={() => setIsSendModalOpen(true)}
+            mobileOpen={isMobileSidebarOpen}
+            onCloseMobile={() => setIsMobileSidebarOpen(false)}
+          />
+        </ErrorBoundary>
       )}
 
       {/* Main Content Area */}
@@ -443,16 +449,18 @@ export default function App() {
           onNavigate={setActiveView}
           onSignOut={handleSignOut}
           transactions={transactions}
+          onToggleMobileMenu={() => setIsMobileSidebarOpen(!isMobileSidebarOpen)}
         />
 
         {/* View Router */}
         <main className="flex-1 overflow-y-auto">
-          {activeView === 'landing' && (
-            <LandingPageView
-              onGetStarted={() => setActiveView('dashboard')}
-              onOpenSendModal={() => setIsSendModalOpen(true)}
-            />
-          )}
+          <ErrorBoundary fallbackTitle="View Screen Recovered">
+            {activeView === 'landing' && (
+              <LandingPageView
+                onGetStarted={() => setActiveView('dashboard')}
+                onOpenSendModal={() => setIsSendModalOpen(true)}
+              />
+            )}
 
           {activeView === 'dashboard' && (
             <DashboardView
@@ -636,6 +644,7 @@ export default function App() {
               onSwitchTenant={handleSwitchTenant}
             />
           )}
+          </ErrorBoundary>
         </main>
       </div>
 

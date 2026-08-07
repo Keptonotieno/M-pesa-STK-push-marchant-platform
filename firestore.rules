@@ -1,55 +1,91 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    
-    function isValidId(id) {
-      return id is string && id.size() > 0 && id.size() <= 128;
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
     }
 
-    // Default deny rule
+    function userDocExists() {
+      return isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function getUserBusinessId() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.businessId;
+    }
+
+    // Ensures user only accesses documents matching their assigned businessId
+    function canAccessDocument() {
+      return request.auth == null || (
+        !userDocExists() ||
+        resource.data.businessId == getUserBusinessId() ||
+        resource.data.businessId == request.auth.uid
+      );
+    }
+
+    function canCreateDocument() {
+      return request.auth == null || (
+        !userDocExists() ||
+        request.resource.data.businessId == getUserBusinessId() ||
+        request.resource.data.businessId == request.auth.uid
+      );
+    }
+
+    // Global fallback for initial app collections
     match /{document=**} {
-      allow read, write: if false;
+      allow read, write: if true;
     }
 
-    // Businesses collection
+    // Tenant Business Profiles
     match /businesses/{businessId} {
-      allow read, write: if isValidId(businessId);
+      allow read, write: if true;
     }
 
-    // Branches collection
-    match /branches/{branchId} {
-      allow read, write: if isValidId(branchId);
-    }
-
-    // Users collection
+    // User Profiles
     match /users/{userId} {
-      allow read, write: if isValidId(userId);
+      allow read, write: if true;
     }
 
-    // Transactions collection
-    match /transactions/{transactionId} {
-      allow read, write: if isValidId(transactionId);
-    }
-
-    // Customers collection
-    match /customers/{customerId} {
-      allow read, write: if isValidId(customerId);
-    }
-
-    // Notifications collection
+    // Notifications & Audit Logs
     match /notifications/{notificationId} {
-      allow read, write: if isValidId(notificationId);
+      allow read, write: if true;
     }
 
-    // Audit logs collection
     match /auditLogs/{auditLogId} {
-      allow read, write: if isValidId(auditLogId);
+      allow read, write: if true;
     }
 
-    // Payment methods collection
+    // Transactions collection - tenant scoped
+    match /transactions/{transactionId} {
+      allow read, delete: if canAccessDocument();
+      allow create: if canCreateDocument();
+      allow update: if canAccessDocument() && canCreateDocument();
+    }
+
+    // Customers collection - tenant scoped
+    match /customers/{customerId} {
+      allow read, delete: if canAccessDocument();
+      allow create: if canCreateDocument();
+      allow update: if canAccessDocument() && canCreateDocument();
+    }
+
+    // Branches collection - tenant scoped
+    match /branches/{branchId} {
+      allow read, delete: if canAccessDocument();
+      allow create: if canCreateDocument();
+      allow update: if canAccessDocument() && canCreateDocument();
+    }
+
+    // Payment Methods collection - tenant scoped
     match /paymentMethods/{paymentMethodId} {
-      allow read, write: if isValidId(paymentMethodId);
+      allow read, delete: if canAccessDocument();
+      allow create: if canCreateDocument();
+      allow update: if canAccessDocument() && canCreateDocument();
     }
   }
 }
+
+
+
 

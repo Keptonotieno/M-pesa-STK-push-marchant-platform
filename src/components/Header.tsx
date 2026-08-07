@@ -16,6 +16,7 @@ import {
   Receipt,
   Phone,
   User as UserIcon,
+  Menu,
 } from 'lucide-react';
 import { User, UserRole, Business, Branch, NotificationItem, Transaction } from '../types';
 
@@ -34,6 +35,7 @@ interface Props {
   onNavigate: (view: string) => void;
   onSignOut?: () => void;
   transactions?: Transaction[];
+  onToggleMobileMenu?: () => void;
 }
 
 export const formatRoleLabel = (role: UserRole): string => {
@@ -83,6 +85,7 @@ export const Header: React.FC<Props> = ({
   onNavigate,
   onSignOut,
   transactions = [],
+  onToggleMobileMenu,
 }) => {
   const [showNotifPopover, setShowNotifPopover] = useState(false);
   const [showUserDropdown, setShowUserDropdown] = useState(false);
@@ -125,10 +128,23 @@ export const Header: React.FC<Props> = ({
   const assignedBranch = branches.find((b) => b.id === (currentUser.branchId || activeBranchId)) || branches[0];
 
   return (
-    <header className="sticky top-0 z-40 glass-header px-4 md:px-6 py-3 transition-colors">
-      <div className="flex items-center justify-between gap-4">
-        {/* Left: Global Search Bar */}
-        <div className="flex items-center gap-3 flex-1 max-w-md">
+    <header className="sticky top-0 z-40 glass-header px-3 sm:px-4 md:px-6 py-2.5 sm:py-3 transition-colors border-b border-slate-200/80 dark:border-white/10">
+      <div className="flex items-center justify-between gap-2 sm:gap-4">
+        {/* Left: Mobile Menu Toggle & Search Bar */}
+        <div className="flex items-center gap-2 flex-1 min-w-0 max-w-xl">
+          {/* Mobile Hamburger Toggle */}
+          {onToggleMobileMenu && (
+            <button
+              onClick={onToggleMobileMenu}
+              className="lg:hidden p-2 rounded-xl text-slate-700 dark:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-slate-800 transition min-h-[44px] min-w-[44px] flex items-center justify-center shrink-0"
+              title="Open Navigation Menu"
+              aria-label="Toggle Navigation Drawer"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+          )}
+
+          {/* Search Input */}
           <div ref={searchContainerRef} className="relative w-full">
             <div className="relative flex items-center">
               <input
@@ -149,10 +165,10 @@ export const Header: React.FC<Props> = ({
                     setShowSearchPopover(false);
                   }
                 }}
-                placeholder="Search transactions by phone, name, receipt or ID..."
-                className="w-full pl-9 pr-8 py-2 rounded-xl glass-input text-xs text-slate-800 dark:text-slate-200 outline-none transition focus:ring-2 focus:ring-emerald-500"
+                placeholder="Search transactions..."
+                className="w-full pl-9 pr-8 py-2 min-h-[44px] sm:min-h-0 rounded-xl glass-input text-xs text-slate-800 dark:text-slate-200 outline-none transition focus:ring-2 focus:ring-emerald-500"
               />
-              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5 pointer-events-none" />
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3 sm:top-2.5 pointer-events-none" />
               {searchQuery && (
                 <button
                   type="button"
@@ -160,7 +176,7 @@ export const Header: React.FC<Props> = ({
                     setSearchQuery('');
                     setShowSearchPopover(false);
                   }}
-                  className="absolute right-2.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-0.5 cursor-pointer"
+                  className="absolute right-2.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1 cursor-pointer min-h-[32px] min-w-[32px] flex items-center justify-center"
                   title="Clear search"
                 >
                   <X className="w-3.5 h-3.5" />
@@ -170,7 +186,7 @@ export const Header: React.FC<Props> = ({
 
             {/* Global Search Results Dropdown Popover */}
             {showSearchPopover && cleanQuery.length > 0 && (
-              <div className="absolute left-0 top-full mt-2 w-full min-w-[320px] sm:min-w-[420px] bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 p-3 z-50 animate-in fade-in duration-150">
+              <div className="absolute left-0 top-full mt-2 w-full min-w-[280px] sm:min-w-[380px] md:min-w-[420px] bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 p-3 z-50 animate-in fade-in duration-150">
                 <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-100 dark:border-slate-800 text-xs">
                   <span className="font-bold text-slate-700 dark:text-slate-300">
                     Search Results ({matchingTransactions.length})
@@ -262,23 +278,23 @@ export const Header: React.FC<Props> = ({
         </div>
 
         {/* Right Action Controls */}
-        <div className="flex items-center gap-2 md:gap-3">
+        <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
           {/* Tenant Business Name Indicator */}
           <div className="hidden xl:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-xs text-slate-600 dark:text-slate-300">
             <Building className="w-3.5 h-3.5 text-emerald-500" />
             <span className="font-bold truncate max-w-[120px]">{currentBusiness.name}</span>
           </div>
 
-          {/* User Role Badge (Display only assigned role, no top-bar switcher) */}
-          <div className="px-3 py-1.5 rounded-xl glass-card text-xs font-semibold text-slate-700 dark:text-slate-200 flex items-center gap-2">
-            <UserCheck className="w-3.5 h-3.5 text-emerald-500" />
+          {/* User Role Badge */}
+          <div className="hidden sm:flex px-2.5 py-1.5 rounded-xl glass-card text-xs font-semibold text-slate-700 dark:text-slate-200 items-center gap-1.5">
+            <UserCheck className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
             <span className="hidden md:inline text-slate-400">Role:</span>
-            <span className="font-bold text-emerald-600 dark:text-emerald-400">
+            <span className="font-bold text-emerald-600 dark:text-emerald-400 truncate max-w-[100px] md:max-w-none">
               {formatRoleLabel(currentUser.role)}
             </span>
           </div>
 
-          {/* Branch Control: Selector if multi-branch allowed, else assigned branch label */}
+          {/* Branch Control */}
           {canAccessMultipleBranches ? (
             <select
               value={activeBranchId}
@@ -293,23 +309,19 @@ export const Header: React.FC<Props> = ({
               ))}
             </select>
           ) : (
-            <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-200">
+            <div className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-200">
               <Store className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-              <span className="font-bold">{assignedBranch?.name || 'Assigned Branch'}</span>
-              {assignedBranch?.tillNumber && (
-                <span className="text-[10px] text-slate-400 font-mono hidden md:inline">
-                  (Till: {assignedBranch.tillNumber})
-                </span>
-              )}
+              <span className="font-bold truncate max-w-[100px]">{assignedBranch?.name || 'Assigned Branch'}</span>
             </div>
           )}
 
           {/* Send STK Push CTA */}
           <button
             onClick={onOpenSendModal}
-            className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-emerald-600/20 flex items-center gap-1.5 transition"
+            className="px-3 py-2 sm:px-3.5 sm:py-2 min-h-[44px] bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-emerald-600/20 flex items-center gap-1.5 transition cursor-pointer"
+            title="Send STK Push"
           >
-            <Send className="w-3.5 h-3.5" />
+            <Send className="w-3.5 h-3.5 shrink-0" />
             <span className="hidden sm:inline">Send STK Push</span>
           </button>
 
@@ -320,7 +332,7 @@ export const Header: React.FC<Props> = ({
                 setShowNotifPopover(!showNotifPopover);
                 if (!showNotifPopover) onMarkNotificationsRead();
               }}
-              className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 transition relative"
+              className="p-2 sm:p-2.5 min-h-[44px] min-w-[44px] rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 transition relative flex items-center justify-center cursor-pointer"
               title="M-PESA Notifications"
             >
               <Bell className="w-4 h-4" />
@@ -332,7 +344,7 @@ export const Header: React.FC<Props> = ({
             </button>
 
             {showNotifPopover && (
-              <div className="absolute right-0 mt-2 w-80 bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 p-3 z-50 animate-in fade-in duration-150">
+              <div className="absolute right-0 mt-2 w-72 sm:w-80 bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 p-3 z-50 animate-in fade-in duration-150">
                 <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-100 dark:border-slate-800">
                   <span className="text-xs font-bold text-slate-900 dark:text-white">M-PESA Notifications</span>
                   <button
@@ -371,7 +383,7 @@ export const Header: React.FC<Props> = ({
           {/* Dark Mode Toggle */}
           <button
             onClick={onToggleDarkMode}
-            className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 transition"
+            className="p-2 sm:p-2.5 min-h-[44px] min-w-[44px] rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 transition flex items-center justify-center cursor-pointer"
             title="Toggle Light / Dark Mode"
           >
             {darkMode ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-slate-600" />}
@@ -381,7 +393,7 @@ export const Header: React.FC<Props> = ({
           <div className="relative">
             <button
               onClick={() => setShowUserDropdown(!showUserDropdown)}
-              className="flex items-center gap-1.5 p-1 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+              className="flex items-center gap-1 p-1 min-h-[44px] rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
             >
               {currentUser.avatar ? (
                 <img
@@ -431,7 +443,7 @@ export const Header: React.FC<Props> = ({
                       onNavigate('profile');
                       setShowUserDropdown(false);
                     }}
-                    className="w-full text-left px-3 py-2 text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl font-medium"
+                    className="w-full text-left px-3 py-2 text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl font-medium cursor-pointer min-h-[40px] flex items-center"
                   >
                     User Account & Profile
                   </button>
@@ -440,7 +452,7 @@ export const Header: React.FC<Props> = ({
                       onNavigate('settings');
                       setShowUserDropdown(false);
                     }}
-                    className="w-full text-left px-3 py-2 text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl font-medium"
+                    className="w-full text-left px-3 py-2 text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl font-medium cursor-pointer min-h-[40px] flex items-center"
                   >
                     Daraja & Webhook Settings
                   </button>
@@ -465,7 +477,7 @@ export const Header: React.FC<Props> = ({
                           onRoleChange(r.role as UserRole);
                           setShowUserDropdown(false);
                         }}
-                        className={`text-left px-2.5 py-1.5 rounded-xl text-[11px] font-medium transition flex items-center justify-between ${
+                        className={`text-left px-2.5 py-1.5 rounded-xl text-[11px] font-medium transition flex items-center justify-between cursor-pointer min-h-[36px] ${
                           currentUser.role === r.role
                             ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 font-bold'
                             : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400'
@@ -488,7 +500,7 @@ export const Header: React.FC<Props> = ({
                         onNavigate('landing');
                       }
                     }}
-                    className="w-full text-left px-3 py-2 text-xs text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-xl flex items-center gap-2 font-semibold"
+                    className="w-full text-left px-3 py-2 text-xs text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-xl flex items-center gap-2 font-semibold cursor-pointer min-h-[40px]"
                   >
                     <LogOut className="w-3.5 h-3.5" /> Sign Out
                   </button>
@@ -501,3 +513,4 @@ export const Header: React.FC<Props> = ({
     </header>
   );
 };
+

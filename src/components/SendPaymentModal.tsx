@@ -118,47 +118,51 @@ export const SendPaymentModal: React.FC<Props> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in duration-150">
-      <div className="relative w-full max-w-lg bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 p-6 md:p-8 overflow-hidden text-slate-800 dark:text-slate-100">
-        {/* Header */}
-        <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-3 sm:p-4 animate-in fade-in duration-150">
+      <div className="relative w-full max-w-[540px] bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col max-h-[85vh] sm:max-h-[90vh] overflow-hidden text-slate-800 dark:text-slate-100">
+        
+        {/* STICKY HEADER */}
+        <div className="sticky top-0 z-20 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md px-5 py-3.5 sm:px-6 sm:py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center border border-emerald-500/30">
-              <Send className="w-6 h-6" />
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-emerald-500/10 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center border border-emerald-500/30 shrink-0">
+              <Send className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
             <div>
-              <h3 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              <h3 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2 leading-tight">
                 Send M-PESA STK Push
               </h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                Instant payment prompt straight to customer&apos;s Safaricom phone.
+              <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400">
+                Instant payment prompt directly to customer&apos;s phone.
               </p>
             </div>
           </div>
           <button
+            type="button"
             onClick={onClose}
-            className="w-9 h-9 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 flex items-center justify-center transition"
+            className="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 flex items-center justify-center transition shrink-0 min-h-[36px] min-w-[36px] cursor-pointer"
+            title="Close modal"
           >
-            <X className="w-5 h-5" />
+            <X className="w-4 h-4" />
           </button>
         </div>
 
-        {errorMsg && (
-          <div className="mt-4 p-3 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 rounded-xl text-xs text-rose-600 dark:text-rose-400 flex items-center gap-2">
-            <AlertTriangle className="w-4 h-4 shrink-0" />
-            <span>{errorMsg}</span>
-          </div>
-        )}
+        {/* SCROLLABLE FORM BODY */}
+        <form id="stk-push-form" onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-3.5">
+          {errorMsg && (
+            <div className="p-3 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 rounded-xl text-xs text-rose-600 dark:text-rose-400 flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 shrink-0" />
+              <span>{errorMsg}</span>
+            </div>
+          )}
 
-        <form onSubmit={handleSubmit} className="mt-5 space-y-4">
-          {/* Quick Customer Select */}
+          {/* Quick CRM Customer Select */}
           <div>
-            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-              Select Customer from CRM (Optional)
+            <label className="block text-xs sm:text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1">
+              Select Customer from CRM <span className="text-[11px] font-normal text-slate-400">(Optional)</span>
             </label>
             <select
               onChange={handleSelectCustomer}
-              className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-xs text-slate-800 dark:text-slate-200 focus:ring-2 focus:ring-emerald-500 outline-none"
+              className="w-full h-11 px-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-xs sm:text-sm text-slate-800 dark:text-slate-200 focus:ring-2 focus:ring-emerald-500 outline-none transition"
             >
               <option value="">-- Choose Existing Customer --</option>
               {customers.map((c) => (
@@ -169,20 +173,20 @@ export const SendPaymentModal: React.FC<Props> = ({
             </select>
           </div>
 
-          {/* Customer Phone & Name */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {/* Two-Column Grid: Phone Number & Customer Name */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
             <div>
               <div className="flex items-center justify-between mb-1">
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
-                  Customer Phone Number <span className="text-emerald-500">*</span>
+                <label className="block text-xs sm:text-sm font-semibold text-slate-700 dark:text-slate-300">
+                  Customer Phone <span className="text-emerald-500">*</span>
                 </label>
                 <button
                   type="button"
                   onClick={() => setPhone('0700830335')}
-                  className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 px-2 py-0.5 rounded-lg border border-emerald-500/30 transition flex items-center gap-1 cursor-pointer"
+                  className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 px-1.5 py-0.5 rounded border border-emerald-500/30 transition flex items-center gap-1 cursor-pointer"
                   title="Use subscriber testing phone 0700830335"
                 >
-                  <Smartphone className="w-3 h-3" />
+                  <Smartphone className="w-2.5 h-2.5" />
                   <span>0700830335</span>
                 </button>
               </div>
@@ -193,15 +197,14 @@ export const SendPaymentModal: React.FC<Props> = ({
                   onChange={(e) => setPhone(e.target.value)}
                   placeholder="e.g. 0700830335"
                   required
-                  className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-sm font-medium text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-emerald-500 outline-none font-mono"
+                  className="w-full h-11 pl-9 pr-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-xs sm:text-sm font-medium text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-emerald-500 outline-none font-mono"
                 />
-                <Smartphone className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+                <Smartphone className="w-4 h-4 text-slate-400 absolute left-3 top-3.5 pointer-events-none" />
               </div>
-              <p className="text-[10px] text-slate-400 mt-1">Accepts 07XX, 01XX, or +254 7XX formats.</p>
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+              <label className="block text-xs sm:text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1">
                 Customer Name
               </label>
               <div className="relative">
@@ -210,20 +213,20 @@ export const SendPaymentModal: React.FC<Props> = ({
                   value={customerName}
                   onChange={(e) => setCustomerName(e.target.value)}
                   placeholder="Full Name"
-                  className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-sm font-medium text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-emerald-500 outline-none"
+                  className="w-full h-11 pl-9 pr-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-xs sm:text-sm font-medium text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-emerald-500 outline-none"
                 />
-                <User className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+                <User className="w-4 h-4 text-slate-400 absolute left-3 top-3.5 pointer-events-none" />
               </div>
             </div>
           </div>
 
-          {/* Amount in KES */}
+          {/* Payment Amount & Presets */}
           <div>
-            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+            <label className="block text-xs sm:text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1">
               Payment Amount (KES) <span className="text-emerald-500">*</span>
             </label>
             <div className="relative">
-              <span className="absolute left-3.5 top-2.5 font-bold text-slate-400 text-sm">KES</span>
+              <span className="absolute left-3.5 top-3 font-bold text-slate-400 text-xs sm:text-sm">KES</span>
               <input
                 type="number"
                 value={amount}
@@ -231,20 +234,20 @@ export const SendPaymentModal: React.FC<Props> = ({
                 placeholder="1500"
                 min="1"
                 required
-                className="w-full pl-14 pr-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-lg font-bold text-emerald-600 dark:text-emerald-400 focus:ring-2 focus:ring-emerald-500 outline-none"
+                className="w-full h-11 pl-14 pr-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-base sm:text-lg font-bold text-emerald-600 dark:text-emerald-400 focus:ring-2 focus:ring-emerald-500 outline-none"
               />
             </div>
-            {/* Quick Preset Buttons */}
+            {/* Quick Presets */}
             <div className="flex flex-wrap gap-1.5 mt-2">
               {quickAmounts.map((q) => (
                 <button
                   type="button"
                   key={q}
                   onClick={() => setAmount(q.toString())}
-                  className={`px-3 py-1 rounded-lg text-xs font-semibold border transition ${
+                  className={`px-2.5 py-1 min-h-[32px] rounded-lg text-xs font-semibold border transition cursor-pointer ${
                     amount === q.toString()
-                      ? 'bg-emerald-500 text-white border-emerald-600'
-                      : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-200'
+                      ? 'bg-emerald-500 text-white border-emerald-600 shadow-sm'
+                      : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700'
                   }`}
                 >
                   KES {q.toLocaleString()}
@@ -253,109 +256,112 @@ export const SendPaymentModal: React.FC<Props> = ({
             </div>
           </div>
 
-          {/* Payment Method Selector */}
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-              Select Payment Collection Method <span className="text-emerald-500">*</span>
-            </label>
-            <select
-              value={selectedPaymentMethodId}
-              onChange={(e) => handleSelectPaymentMethod(e.target.value)}
-              className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-xs font-bold text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-emerald-500 outline-none"
-            >
-              {activeMethods.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.type === 'TILL_NUMBER' ? '🏬 Buy Goods (Till: ' : m.type === 'PAYBILL' ? '🏢 PayBill (' : m.type === 'POCHI_LA_BIASHARA' ? '📱 Pochi la Biashara (' : '📲 Send Money ('}
-                  {m.shortcodeOrNumber}) - {m.name} {m.isDefault ? '[DEFAULT]' : ''}
-                </option>
-              ))}
-            </select>
+          {/* Payment Method Selector & Conditional PayBill Account */}
+          <div className={selectedMethod?.type === 'PAYBILL' ? 'grid grid-cols-1 sm:grid-cols-2 gap-3.5' : ''}>
+            <div>
+              <label className="block text-xs sm:text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                Collection Method <span className="text-emerald-500">*</span>
+              </label>
+              <select
+                value={selectedPaymentMethodId}
+                onChange={(e) => handleSelectPaymentMethod(e.target.value)}
+                className="w-full h-11 px-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-xs sm:text-sm font-semibold text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-emerald-500 outline-none"
+              >
+                {activeMethods.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.type === 'TILL_NUMBER' ? '🏬 Buy Goods (' : m.type === 'PAYBILL' ? '🏢 PayBill (' : m.type === 'POCHI_LA_BIASHARA' ? '📱 Pochi (' : '📲 Direct ('}
+                    {m.shortcodeOrNumber}) - {m.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {selectedMethod?.type === 'PAYBILL' && (
+              <div>
+                <label className="block text-xs sm:text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  PayBill Account Ref <span className="text-emerald-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={customPaybillAccount}
+                  onChange={(e) => setCustomPaybillAccount(e.target.value)}
+                  placeholder="e.g. INV-1058"
+                  required
+                  className="w-full h-11 px-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 font-mono text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-emerald-500 outline-none"
+                />
+              </div>
+            )}
           </div>
 
-          {/* Conditional PayBill Account No Field */}
-          {selectedMethod?.type === 'PAYBILL' && (
+          {/* Branch & Description */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
             <div>
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                PayBill Account Number / Ref <span className="text-emerald-500">*</span>
-              </label>
-              <input
-                type="text"
-                value={customPaybillAccount}
-                onChange={(e) => setCustomPaybillAccount(e.target.value)}
-                placeholder="e.g. INV-1058 or Customer ID"
-                required
-                className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 font-mono text-xs font-bold text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-emerald-500 outline-none"
-              />
-            </div>
-          )}
-
-          {/* Branch & Till Selection */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                Branch / Till Number
+              <label className="block text-xs sm:text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                Branch / Till
               </label>
               <select
                 value={selectedBranchId}
                 onChange={(e) => setSelectedBranchId(e.target.value)}
-                className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-xs font-medium text-slate-800 dark:text-slate-200 focus:ring-2 focus:ring-emerald-500 outline-none"
+                className="w-full h-11 px-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-xs sm:text-sm font-medium text-slate-800 dark:text-slate-200 focus:ring-2 focus:ring-emerald-500 outline-none"
               >
                 {branches.map((b) => (
                   <option key={b.id} value={b.id}>
-                    {b.name} (Till: {b.tillNumber})
+                    {b.name} ({b.tillNumber})
                   </option>
                 ))}
               </select>
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                Description / Invoice #
+              <label className="block text-xs sm:text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                Description / Ref #
               </label>
               <input
                 type="text"
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="e.g. Order #GLS-1058"
-                className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-xs font-medium text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-emerald-500 outline-none"
+                className="w-full h-11 px-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-xs sm:text-sm font-medium text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-emerald-500 outline-none"
               />
             </div>
           </div>
 
-          {/* Security badge note */}
-          <div className="p-3 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl flex items-center gap-2 text-[11px] text-slate-500 dark:text-slate-400">
+          {/* Security Banner Note */}
+          <div className="p-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl flex items-center gap-2 text-[11px] text-slate-500 dark:text-slate-400">
             <ShieldCheck className="w-4 h-4 text-emerald-500 shrink-0" />
-            <span>Encrypted via Safaricom Daraja 2.0 API. Customer receives standard M-PESA PIN prompt.</span>
-          </div>
-
-          {/* Submit Action */}
-          <div className="pt-2 flex items-center justify-end gap-3">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-xl text-xs font-bold shadow-lg shadow-emerald-600/30 transition flex items-center gap-2"
-            >
-              {isSubmitting ? (
-                <>
-                  <RefreshCw className="w-4 h-4 animate-spin" />
-                  <span>Initiating STK Push...</span>
-                </>
-              ) : (
-                <>
-                  <Send className="w-4 h-4" />
-                  <span>Send STK Push Request</span>
-                </>
-              )}
-            </button>
+            <span>Encrypted via Safaricom Daraja 2.0 API. Customer gets standard M-PESA PIN prompt.</span>
           </div>
         </form>
+
+        {/* STICKY FOOTER */}
+        <div className="sticky bottom-0 z-20 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md px-5 py-3 sm:px-6 sm:py-3.5 border-t border-slate-100 dark:border-slate-800 flex items-center justify-end gap-2.5 shrink-0">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-4 py-2.5 h-11 rounded-xl border border-slate-200 dark:border-slate-800 text-xs sm:text-sm font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer min-w-[80px]"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            form="stk-push-form"
+            disabled={isSubmitting}
+            className="px-5 py-2.5 h-11 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-xl text-xs sm:text-sm font-bold shadow-lg shadow-emerald-600/25 transition flex items-center justify-center gap-2 cursor-pointer min-w-[160px]"
+          >
+            {isSubmitting ? (
+              <>
+                <RefreshCw className="w-4 h-4 animate-spin" />
+                <span>Initiating...</span>
+              </>
+            ) : (
+              <>
+                <Send className="w-4 h-4" />
+                <span>Send STK Push</span>
+              </>
+            )}
+          </button>
+        </div>
+
       </div>
     </div>
   );

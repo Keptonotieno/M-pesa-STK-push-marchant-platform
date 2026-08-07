@@ -139,6 +139,18 @@ export interface PaymentMethodConfig {
   initiatorName?: string; // Safaricom Daraja Initiator Name for B2C/B2B/Status
   securityCredential?: string; // Safaricom Daraja Security Credential
   callbackUrl?: string; // Custom or system Daraja Webhook Callback Receiver URL
+  validationUrl?: string; // Daraja C2B Validation URL
+  confirmationUrl?: string; // Daraja C2B Confirmation URL
+  queueTimeoutUrl?: string; // Daraja Queue Timeout URL for B2C/B2B/Status/Reversal
+  resultUrl?: string; // Daraja Result URL for B2C/B2B/Status/Reversal
+  b2cCommandId?: string; // e.g. BusinessPayment, SalaryPayment, PromotionPayment
+  b2bCommandId?: string; // e.g. BusinessPayBill, BusinessBuyGoods, DisburseFundsToBusiness
+  responseType?: string; // Completed or Cancelled for C2B registration
+  enableB2c?: boolean;
+  enableB2b?: boolean;
+  enableReversal?: boolean;
+  enableStatusQuery?: boolean;
+  enableAccountBalance?: boolean;
   
   // Global Gateway Credentials (Stripe, PayPal, Flutterwave, Pesapal)
   gatewayCategory?: 'MPESA' | 'GLOBAL_GATEWAY' | 'CARD' | 'WALLET';
@@ -270,7 +282,7 @@ export interface WebhookLog {
   id: string;
   businessId?: string;
   timestamp: string;
-  eventType: 'STK_PUSH_CALLBACK' | 'C2B_VALIDATION' | 'C2B_CONFIRMATION' | 'B2C_RESULT';
+  eventType: 'STK_PUSH_CALLBACK' | 'C2B_VALIDATION' | 'C2B_CONFIRMATION' | 'B2C_RESULT' | string;
   merchantRequestId: string;
   checkoutRequestId: string;
   resultCode: number;

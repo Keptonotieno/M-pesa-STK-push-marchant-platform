@@ -24,6 +24,18 @@ import {
   Zap,
   DollarSign,
   Layers,
+  Server,
+  Terminal,
+  RefreshCw,
+  Activity,
+  ArrowRightLeft,
+  ArrowDownRight,
+  ArrowUpRight,
+  Play,
+  CheckCircle2,
+  Sliders,
+  Sparkles,
+  Key,
 } from 'lucide-react';
 import { PaymentMethodConfig, MpesaPaymentMethodType, Branch } from '../types';
 import {
@@ -31,6 +43,7 @@ import {
   maskSecretKey,
   validateGatewayCredentials,
 } from '../lib/encryption';
+import { DarajaIntegrationWizardModal } from '../components/DarajaIntegrationWizardModal';
 
 interface Props {
   paymentMethods: PaymentMethodConfig[];
@@ -56,6 +69,10 @@ export const PaymentMethodsView: React.FC<Props> = ({
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingMethod, setEditingMethod] = useState<PaymentMethodConfig | null>(null);
 
+  // Daraja Integration Wizard State
+  const [isWizardOpen, setIsWizardOpen] = useState(false);
+  const [wizardEditingMethod, setWizardEditingMethod] = useState<PaymentMethodConfig | null>(null);
+
   // Provider Selection
   const [selectedProvider, setSelectedProvider] = useState<ProviderChoice>('SAFARICOM_MPESA');
 
@@ -79,6 +96,32 @@ export const PaymentMethodsView: React.FC<Props> = ({
   const [initiatorName, setInitiatorName] = useState('');
   const [securityCredential, setSecurityCredential] = useState('');
   const [callbackUrl, setCallbackUrl] = useState('https://ais-dev-k6isovulwhkhbyepvroai5-9288613014.europe-west3.run.app/api/stkpush/callback');
+  const [validationUrl, setValidationUrl] = useState('https://ais-dev-k6isovulwhkhbyepvroai5-9288613014.europe-west3.run.app/api/c2b/validation');
+  const [confirmationUrl, setConfirmationUrl] = useState('https://ais-dev-k6isovulwhkhbyepvroai5-9288613014.europe-west3.run.app/api/c2b/confirmation');
+  const [queueTimeoutUrl, setQueueTimeoutUrl] = useState('https://ais-dev-k6isovulwhkhbyepvroai5-9288613014.europe-west3.run.app/api/b2c/timeout');
+  const [resultUrl, setResultUrl] = useState('https://ais-dev-k6isovulwhkhbyepvroai5-9288613014.europe-west3.run.app/api/b2c/result');
+  const [b2cCommandId, setB2cCommandId] = useState('BusinessPayment');
+  const [b2bCommandId, setB2bCommandId] = useState('BusinessPayBill');
+  const [responseType, setResponseType] = useState('Completed');
+  const [enableB2c, setEnableB2c] = useState(false);
+  const [enableB2b, setEnableB2b] = useState(false);
+  const [enableReversal, setEnableReversal] = useState(false);
+  const [enableStatusQuery, setEnableStatusQuery] = useState(false);
+  const [enableAccountBalance, setEnableAccountBalance] = useState(false);
+  const [showAdvancedMpesa, setShowAdvancedMpesa] = useState(false);
+
+  // Operations Test Lab Modal state
+  const [isTestLabOpen, setIsTestLabOpen] = useState(false);
+  const [testLabTargetPm, setTestLabTargetPm] = useState<PaymentMethodConfig | null>(null);
+  const [activeTestTab, setActiveTestTab] = useState<'STK_PUSH' | 'C2B' | 'B2C' | 'B2B' | 'TRANSACTION_STATUS' | 'REVERSAL' | 'ACCOUNT_BALANCE' | 'REGISTER_URLS'>('STK_PUSH');
+  const [testPhone, setTestPhone] = useState('0712345678');
+  const [testAmount, setTestAmount] = useState('10');
+  const [testBillRef, setTestBillRef] = useState('ACC-TEST-001');
+  const [testMpesaReceipt, setTestMpesaReceipt] = useState('NLX8921021K');
+  const [testReceiverShortcode, setTestReceiverShortcode] = useState('600982');
+  const [testRemarks, setTestRemarks] = useState('Operations Test Request');
+  const [testRunning, setTestRunning] = useState(false);
+  const [testResultLog, setTestResultLog] = useState<any | null>(null);
 
   // Global Gateways Credentials state (Stripe, PayPal, Flutterwave, Pesapal)
   const [stripePublishableKey, setStripePublishableKey] = useState('');
@@ -125,6 +168,19 @@ export const PaymentMethodsView: React.FC<Props> = ({
     setInitiatorName('');
     setSecurityCredential('');
     setCallbackUrl('https://ais-dev-k6isovulwhkhbyepvroai5-9288613014.europe-west3.run.app/api/stkpush/callback');
+    setValidationUrl('https://ais-dev-k6isovulwhkhbyepvroai5-9288613014.europe-west3.run.app/api/c2b/validation');
+    setConfirmationUrl('https://ais-dev-k6isovulwhkhbyepvroai5-9288613014.europe-west3.run.app/api/c2b/confirmation');
+    setQueueTimeoutUrl('https://ais-dev-k6isovulwhkhbyepvroai5-9288613014.europe-west3.run.app/api/b2c/timeout');
+    setResultUrl('https://ais-dev-k6isovulwhkhbyepvroai5-9288613014.europe-west3.run.app/api/b2c/result');
+    setB2cCommandId('BusinessPayment');
+    setB2bCommandId('BusinessPayBill');
+    setResponseType('Completed');
+    setEnableB2c(false);
+    setEnableB2b(false);
+    setEnableReversal(false);
+    setEnableStatusQuery(false);
+    setEnableAccountBalance(false);
+    setShowAdvancedMpesa(false);
     setStripePublishableKey('');
     setStripeSecretKey('');
     setStripeWebhookSecret('');
@@ -145,6 +201,11 @@ export const PaymentMethodsView: React.FC<Props> = ({
   };
 
   const openAddModal = (provider: ProviderChoice = 'SAFARICOM_MPESA') => {
+    if (provider === 'SAFARICOM_MPESA') {
+      setWizardEditingMethod(null);
+      setIsWizardOpen(true);
+      return;
+    }
     setEditingMethod(null);
     resetForm();
     setSelectedProvider(provider);
@@ -160,14 +221,17 @@ export const PaymentMethodsView: React.FC<Props> = ({
     } else if (provider === 'PESAPAL') {
       setType('PESAPAL');
       setName('Pesapal v3 Payment Channel');
-    } else {
-      setType('TILL_NUMBER');
-      setName('Main HQ Till');
     }
     setIsModalOpen(true);
   };
 
   const openEditModal = (pm: PaymentMethodConfig) => {
+    if (pm.provider === 'SAFARICOM_MPESA' || ['TILL_NUMBER', 'PAYBILL', 'POCHI_LA_BIASHARA', 'SEND_MONEY'].includes(pm.type)) {
+      setWizardEditingMethod(pm);
+      setIsWizardOpen(true);
+      return;
+    }
+
     setEditingMethod(pm);
     setName(pm.name);
     setType(pm.type);
@@ -187,6 +251,18 @@ export const PaymentMethodsView: React.FC<Props> = ({
     setInitiatorName(pm.initiatorName || '');
     setSecurityCredential(pm.securityCredential || '');
     setCallbackUrl(pm.callbackUrl || 'https://ais-dev-k6isovulwhkhbyepvroai5-9288613014.europe-west3.run.app/api/stkpush/callback');
+    setValidationUrl(pm.validationUrl || 'https://ais-dev-k6isovulwhkhbyepvroai5-9288613014.europe-west3.run.app/api/c2b/validation');
+    setConfirmationUrl(pm.confirmationUrl || 'https://ais-dev-k6isovulwhkhbyepvroai5-9288613014.europe-west3.run.app/api/c2b/confirmation');
+    setQueueTimeoutUrl(pm.queueTimeoutUrl || 'https://ais-dev-k6isovulwhkhbyepvroai5-9288613014.europe-west3.run.app/api/b2c/timeout');
+    setResultUrl(pm.resultUrl || 'https://ais-dev-k6isovulwhkhbyepvroai5-9288613014.europe-west3.run.app/api/b2c/result');
+    setB2cCommandId(pm.b2cCommandId || 'BusinessPayment');
+    setB2bCommandId(pm.b2bCommandId || 'BusinessPayBill');
+    setResponseType(pm.responseType || 'Completed');
+    setEnableB2c(Boolean(pm.enableB2c || pm.b2cReady));
+    setEnableB2b(Boolean(pm.enableB2b));
+    setEnableReversal(Boolean(pm.enableReversal));
+    setEnableStatusQuery(Boolean(pm.enableStatusQuery));
+    setEnableAccountBalance(Boolean(pm.enableAccountBalance));
 
     setStripePublishableKey(pm.stripePublishableKey || '');
     setStripeSecretKey(pm.stripeSecretKey || '');
@@ -216,6 +292,111 @@ export const PaymentMethodsView: React.FC<Props> = ({
     navigator.clipboard.writeText(text);
     setCopiedId(id);
     setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  const handleRunTestLab = async () => {
+    setTestRunning(true);
+    setTestResultLog(null);
+
+    const pm = testLabTargetPm || paymentMethods.find((p) => p.provider === 'SAFARICOM_MPESA' || p.gatewayCategory === 'MPESA') || paymentMethods[0];
+
+    try {
+      let endpoint = '';
+      let body: any = {};
+
+      if (activeTestTab === 'STK_PUSH') {
+        endpoint = '/api/stkpush';
+        body = {
+          phoneNumber: testPhone,
+          amount: parseFloat(testAmount) || 10,
+          accountReference: testBillRef,
+          transactionDesc: testRemarks,
+          paymentMethodId: pm?.id,
+        };
+      } else if (activeTestTab === 'C2B') {
+        endpoint = '/api/c2b/simulate';
+        body = {
+          shortCode: pm?.shortcodeOrNumber || '600982',
+          commandID: 'CustomerPayBillOnline',
+          amount: parseFloat(testAmount) || 10,
+          msisdn: testPhone,
+          billRefNumber: testBillRef,
+          paymentMethodId: pm?.id,
+        };
+      } else if (activeTestTab === 'B2C') {
+        endpoint = '/api/b2c/payout';
+        body = {
+          phoneNumber: testPhone,
+          amount: parseFloat(testAmount) || 10,
+          remarks: testRemarks,
+          commandID: pm?.b2cCommandId || 'BusinessPayment',
+          paymentMethodId: pm?.id,
+        };
+      } else if (activeTestTab === 'B2B') {
+        endpoint = '/api/b2b/transfer';
+        body = {
+          receiverShortCode: testReceiverShortcode,
+          amount: parseFloat(testAmount) || 100,
+          remarks: testRemarks,
+          accountReference: testBillRef,
+          commandID: pm?.b2bCommandId || 'BusinessPayBill',
+          paymentMethodId: pm?.id,
+        };
+      } else if (activeTestTab === 'TRANSACTION_STATUS') {
+        endpoint = '/api/daraja/transaction-status';
+        body = {
+          mpesaReceiptNumber: testMpesaReceipt,
+          remarks: testRemarks,
+          paymentMethodId: pm?.id,
+        };
+      } else if (activeTestTab === 'REVERSAL') {
+        endpoint = '/api/daraja/reversal';
+        body = {
+          transactionID: testMpesaReceipt,
+          amount: parseFloat(testAmount) || 10,
+          remarks: testRemarks,
+          paymentMethodId: pm?.id,
+        };
+      } else if (activeTestTab === 'ACCOUNT_BALANCE') {
+        endpoint = '/api/daraja/account-balance';
+        body = {
+          remarks: testRemarks,
+          paymentMethodId: pm?.id,
+        };
+      } else if (activeTestTab === 'REGISTER_URLS') {
+        endpoint = '/api/daraja/register-c2b-urls';
+        body = {
+          shortCode: pm?.shortcodeOrNumber || '600982',
+          confirmationUrl: pm?.confirmationUrl || 'https://ais-dev-k6isovulwhkhbyepvroai5-9288613014.europe-west3.run.app/api/c2b/confirmation',
+          validationUrl: pm?.validationUrl || 'https://ais-dev-k6isovulwhkhbyepvroai5-9288613014.europe-west3.run.app/api/c2b/validation',
+          responseType: pm?.responseType || 'Completed',
+          paymentMethodId: pm?.id,
+        };
+      }
+
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+
+      const data = await res.json();
+      setTestResultLog({
+        status: res.status,
+        ok: res.ok,
+        data,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (err: any) {
+      setTestResultLog({
+        status: 500,
+        ok: false,
+        error: err?.message || 'Failed to connect to Daraja endpoint.',
+        timestamp: new Date().toISOString(),
+      });
+    } finally {
+      setTestRunning(false);
+    }
   };
 
   const handleTestConnection = async () => {
@@ -307,10 +488,62 @@ export const PaymentMethodsView: React.FC<Props> = ({
       return;
     }
 
-    // Validate provider specific credentials
+    // Validate provider specific credentials strictly
     if (selectedProvider === 'SAFARICOM_MPESA') {
+      const validationErrors: string[] = [];
+
       if (!shortcodeOrNumber.trim()) {
-        setErrorMsg('Please enter the shortcode or phone number.');
+        validationErrors.push('Shortcode, Till Number, or Phone Line is required.');
+      } else {
+        const cleaned = shortcodeOrNumber.trim().replace(/\s+/g, '');
+        if (type === 'TILL_NUMBER' || type === 'PAYBILL') {
+          if (!/^\d{4,8}$/.test(cleaned)) {
+            validationErrors.push('Till/PayBill Shortcode must be numeric (4 to 8 digits).');
+          }
+        }
+      }
+
+      if (!consumerKey.trim() || consumerKey.trim().length < 6) {
+        validationErrors.push('Consumer Key is required (min 6 characters).');
+      }
+
+      if (!consumerSecret.trim() || consumerSecret.trim().length < 6) {
+        validationErrors.push('Consumer Secret is required (min 6 characters).');
+      }
+
+      if (type === 'TILL_NUMBER' || type === 'PAYBILL') {
+        if (!passkey.trim() || passkey.trim().length < 10) {
+          validationErrors.push('Lipa Na M-PESA Online Passkey is required for Till / PayBill STK Push.');
+        }
+        if (!validationUrl.trim() || (!validationUrl.startsWith('http://') && !validationUrl.startsWith('https://'))) {
+          validationErrors.push('Valid C2B Validation URL (HTTPS/HTTP) is required.');
+        }
+        if (!confirmationUrl.trim() || (!confirmationUrl.startsWith('http://') && !confirmationUrl.startsWith('https://'))) {
+          validationErrors.push('Valid C2B Confirmation URL (HTTPS/HTTP) is required.');
+        }
+      }
+
+      if (!callbackUrl.trim() || (!callbackUrl.startsWith('http://') && !callbackUrl.startsWith('https://'))) {
+        validationErrors.push('Valid Webhook Callback Receiver URL (HTTPS/HTTP) is required.');
+      }
+
+      if (enableB2c || enableB2b || enableReversal || enableStatusQuery || enableAccountBalance) {
+        if (!initiatorName.trim()) {
+          validationErrors.push('Initiator Name is required for B2C/B2B/Reversal/Status/Balance.');
+        }
+        if (!securityCredential.trim()) {
+          validationErrors.push('Security Credential is required for B2C/B2B/Reversal/Status/Balance.');
+        }
+        if (!queueTimeoutUrl.trim() || (!queueTimeoutUrl.startsWith('http://') && !queueTimeoutUrl.startsWith('https://'))) {
+          validationErrors.push('Valid Queue Timeout URL (HTTPS/HTTP) is required.');
+        }
+        if (!resultUrl.trim() || (!resultUrl.startsWith('http://') && !resultUrl.startsWith('https://'))) {
+          validationErrors.push('Valid Result URL (HTTPS/HTTP) is required.');
+        }
+      }
+
+      if (validationErrors.length > 0) {
+        setErrorMsg('Validation Failed: ' + validationErrors.join(' | '));
         return;
       }
     } else if (selectedProvider === 'STRIPE') {
@@ -362,6 +595,18 @@ export const PaymentMethodsView: React.FC<Props> = ({
         initiatorName: initiatorName.trim(),
         securityCredential: securityCredential.trim(),
         callbackUrl: callbackUrl.trim(),
+        validationUrl: validationUrl.trim(),
+        confirmationUrl: confirmationUrl.trim(),
+        queueTimeoutUrl: queueTimeoutUrl.trim(),
+        resultUrl: resultUrl.trim(),
+        b2cCommandId,
+        b2bCommandId,
+        responseType,
+        enableB2c,
+        enableB2b,
+        enableReversal,
+        enableStatusQuery,
+        enableAccountBalance,
 
         // Stripe
         stripePublishableKey: stripePublishableKey.trim(),
@@ -540,8 +785,19 @@ export const PaymentMethodsView: React.FC<Props> = ({
 
         <div className="flex items-center gap-2 flex-wrap">
           <button
+            onClick={() => {
+              setTestLabTargetPm(paymentMethods.find((p) => p.provider === 'SAFARICOM_MPESA') || null);
+              setIsTestLabOpen(true);
+            }}
+            className="px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-emerald-400 border border-emerald-500/30 rounded-xl text-xs font-bold shadow-md transition flex items-center gap-2 cursor-pointer"
+          >
+            <Terminal className="w-4 h-4 text-emerald-400" />
+            <span>🧪 Daraja Test Lab</span>
+          </button>
+
+          <button
             onClick={() => openAddModal('SAFARICOM_MPESA')}
-            className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-900/20 transition flex items-center gap-2"
+            className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-900/20 transition flex items-center gap-2 cursor-pointer"
           >
             <Plus className="w-4 h-4" />
             <span>Add M-PESA Channel</span>
@@ -549,7 +805,7 @@ export const PaymentMethodsView: React.FC<Props> = ({
 
           <button
             onClick={() => openAddModal('STRIPE')}
-            className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold shadow-md shadow-indigo-900/20 transition flex items-center gap-2"
+            className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold shadow-md shadow-indigo-900/20 transition flex items-center gap-2 cursor-pointer"
           >
             <Globe className="w-4 h-4" />
             <span>Add Global Gateway</span>
@@ -816,6 +1072,18 @@ export const PaymentMethodsView: React.FC<Props> = ({
                 )}
 
                 <div className="flex items-center gap-1">
+                  {(pm.provider === 'SAFARICOM_MPESA' || pm.gatewayCategory === 'MPESA') && (
+                    <button
+                      onClick={() => {
+                        setTestLabTargetPm(pm);
+                        setIsTestLabOpen(true);
+                      }}
+                      className="p-2 rounded-xl text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 transition"
+                      title="Run Daraja 11-Service Operations Test Lab"
+                    >
+                      <Terminal className="w-4 h-4" />
+                    </button>
+                  )}
                   <button
                     onClick={() =>
                       onUpdatePaymentMethod(pm.id, {
@@ -974,14 +1242,14 @@ export const PaymentMethodsView: React.FC<Props> = ({
                 />
               </div>
 
-              {/* M-PESA Specific Selection */}
+              {/* M-PESA Specific Credentials & Configuration Fields */}
               {selectedProvider === 'SAFARICOM_MPESA' && (
-                <>
+                <div className="space-y-4 pt-1">
                   <div>
                     <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
                       M-PESA Channel Type <span className="text-emerald-500">*</span>
                     </label>
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                       {[
                         { id: 'TILL_NUMBER', label: 'Buy Goods (Till)', icon: Store },
                         { id: 'PAYBILL', label: 'PayBill Number', icon: Building2 },
@@ -995,14 +1263,14 @@ export const PaymentMethodsView: React.FC<Props> = ({
                             type="button"
                             key={item.id}
                             onClick={() => setType(item.id as MpesaPaymentMethodType)}
-                            className={`p-2.5 rounded-xl border text-left flex items-center gap-2 transition ${
+                            className={`p-2.5 rounded-xl border text-left flex flex-col justify-between gap-1 transition ${
                               isSel
                                 ? 'bg-emerald-500/10 border-emerald-500 text-emerald-600 dark:text-emerald-400 font-bold'
-                                : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-600'
+                                : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-100'
                             }`}
                           >
                             <Icon className="w-4 h-4 shrink-0" />
-                            <span className="text-xs">{item.label}</span>
+                            <span className="text-[11px] leading-tight">{item.label}</span>
                           </button>
                         );
                       })}
@@ -1012,32 +1280,343 @@ export const PaymentMethodsView: React.FC<Props> = ({
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                        Shortcode or Till Number <span className="text-emerald-500">*</span>
+                        {type === 'TILL_NUMBER'
+                          ? 'Buy Goods Till Number'
+                          : type === 'PAYBILL'
+                          ? 'PayBill Shortcode'
+                          : 'Phone Line / MSISDN'}{' '}
+                        <span className="text-emerald-500">*</span>
                       </label>
                       <input
                         type="text"
                         value={shortcodeOrNumber}
                         onChange={(e) => setShortcodeOrNumber(e.target.value)}
-                        placeholder="e.g. 174379 or 522522"
+                        placeholder={
+                          type === 'TILL_NUMBER'
+                            ? 'e.g. 174379'
+                            : type === 'PAYBILL'
+                            ? 'e.g. 522522'
+                            : 'e.g. 0712345678'
+                        }
+                        required
                         className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 font-mono text-xs font-bold text-emerald-600 dark:text-emerald-400 outline-none"
                       />
                     </div>
+
                     {type === 'PAYBILL' && (
                       <div>
                         <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                          Account Ref Pattern
+                          Account Reference Pattern
                         </label>
                         <input
                           type="text"
                           value={accountNumber}
                           onChange={(e) => setAccountNumber(e.target.value)}
-                          placeholder="e.g. INV-001"
+                          placeholder="e.g. INV-001 or ACC-XYZ"
                           className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 font-mono text-xs text-slate-800 dark:text-slate-200 outline-none"
                         />
                       </div>
                     )}
                   </div>
-                </>
+
+                  {/* Safaricom Daraja OAuth Credentials */}
+                  <div className="p-4 rounded-2xl bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800/40 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-emerald-950 dark:text-emerald-300 flex items-center gap-1.5">
+                        <Key className="w-4 h-4 text-emerald-500" />
+                        Safaricom Daraja OAuth 2.0 Credentials
+                      </span>
+                      <span className="px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 text-[10px] font-mono font-bold">
+                        AES-256 Vault Guard
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                          Consumer Key <span className="text-emerald-500">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={consumerKey}
+                          onChange={(e) => setConsumerKey(e.target.value)}
+                          placeholder="Safaricom App Consumer Key"
+                          required
+                          className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 font-mono text-xs text-slate-800 dark:text-slate-200 outline-none"
+                        />
+                      </div>
+
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300">
+                            Consumer Secret <span className="text-emerald-500">*</span>
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => setShowSecrets(!showSecrets)}
+                            className="text-[10px] text-slate-500 hover:text-slate-700 flex items-center gap-1 cursor-pointer"
+                          >
+                            {showSecrets ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                            <span>{showSecrets ? 'Hide' : 'Reveal'}</span>
+                          </button>
+                        </div>
+                        <input
+                          type={showSecrets ? 'text' : 'password'}
+                          value={consumerSecret}
+                          onChange={(e) => setConsumerSecret(e.target.value)}
+                          placeholder="Safaricom App Consumer Secret"
+                          required
+                          className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 font-mono text-xs text-slate-800 dark:text-slate-200 outline-none"
+                        />
+                      </div>
+                    </div>
+
+                    {(type === 'TILL_NUMBER' || type === 'PAYBILL') && (
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300">
+                            Lipa Na M-PESA Online Passkey <span className="text-emerald-500">*</span>
+                          </label>
+                          <span className="text-[10px] text-slate-400">Required for STK Push Express</span>
+                        </div>
+                        <input
+                          type={showSecrets ? 'text' : 'password'}
+                          value={passkey}
+                          onChange={(e) => setPasskey(e.target.value)}
+                          placeholder="bfb279f9aa9bdbcf158e97dd71a467cd..."
+                          required={type === 'TILL_NUMBER' || type === 'PAYBILL'}
+                          className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 font-mono text-xs text-slate-800 dark:text-slate-200 outline-none"
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Webhook & Callback Receiver URLs */}
+                  <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                        <Server className="w-4 h-4 text-emerald-500" />
+                        Daraja Webhook Callback Receiver URLs
+                      </span>
+                      <span className="text-[10px] text-slate-400 font-mono">HTTPS Endpoints Required</span>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                        Webhook Callback Receiver URL <span className="text-emerald-500">*</span>
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          value={callbackUrl}
+                          onChange={(e) => setCallbackUrl(e.target.value)}
+                          placeholder="https://yourdomain.com/api/stkpush/callback"
+                          required
+                          className="flex-1 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 font-mono text-xs text-emerald-600 dark:text-emerald-400 outline-none"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleCopy('cb_url', callbackUrl)}
+                          className="px-3 py-2 bg-slate-200 dark:bg-slate-800 text-xs font-bold rounded-xl flex items-center gap-1 cursor-pointer shrink-0"
+                        >
+                          {copiedId === 'cb_url' ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+                        </button>
+                      </div>
+                    </div>
+
+                    {(type === 'TILL_NUMBER' || type === 'PAYBILL') && (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                        <div>
+                          <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                            C2B Validation URL <span className="text-emerald-500">*</span>
+                          </label>
+                          <input
+                            type="text"
+                            value={validationUrl}
+                            onChange={(e) => setValidationUrl(e.target.value)}
+                            placeholder="https://.../api/c2b/validation"
+                            required
+                            className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 font-mono text-xs text-slate-800 dark:text-slate-200 outline-none"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                            C2B Confirmation URL <span className="text-emerald-500">*</span>
+                          </label>
+                          <input
+                            type="text"
+                            value={confirmationUrl}
+                            onChange={(e) => setConfirmationUrl(e.target.value)}
+                            placeholder="https://.../api/c2b/confirmation"
+                            required
+                            className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 font-mono text-xs text-slate-800 dark:text-slate-200 outline-none"
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Advanced Daraja Operations Accordion */}
+                  <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-3">
+                    <button
+                      type="button"
+                      onClick={() => setShowAdvancedMpesa(!showAdvancedMpesa)}
+                      className="w-full flex items-center justify-between text-xs font-bold text-slate-900 dark:text-white cursor-pointer"
+                    >
+                      <span className="flex items-center gap-1.5">
+                        <Sliders className="w-4 h-4 text-emerald-500" />
+                        Advanced Services (B2C, B2B, Reversal, Status, Account Balance)
+                      </span>
+                      <span className="text-[11px] text-emerald-600 dark:text-emerald-400 underline">
+                        {showAdvancedMpesa ? 'Hide Controls' : 'Configure Advanced Capabilities'}
+                      </span>
+                    </button>
+
+                    {showAdvancedMpesa && (
+                      <div className="space-y-4 pt-3 border-t border-slate-200 dark:border-slate-800 animate-in fade-in duration-150">
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                          <label className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center gap-2 text-xs font-semibold cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={enableB2c}
+                              onChange={(e) => setEnableB2c(e.target.checked)}
+                              className="rounded text-emerald-600 focus:ring-emerald-500"
+                            />
+                            <span>B2C Disbursements</span>
+                          </label>
+
+                          <label className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center gap-2 text-xs font-semibold cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={enableB2b}
+                              onChange={(e) => setEnableB2b(e.target.checked)}
+                              className="rounded text-emerald-600 focus:ring-emerald-500"
+                            />
+                            <span>B2B Transfers</span>
+                          </label>
+
+                          <label className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center gap-2 text-xs font-semibold cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={enableReversal}
+                              onChange={(e) => setEnableReversal(e.target.checked)}
+                              className="rounded text-emerald-600 focus:ring-emerald-500"
+                            />
+                            <span>Reversals Engine</span>
+                          </label>
+
+                          <label className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center gap-2 text-xs font-semibold cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={enableStatusQuery}
+                              onChange={(e) => setEnableStatusQuery(e.target.checked)}
+                              className="rounded text-emerald-600 focus:ring-emerald-500"
+                            />
+                            <span>Status Queries</span>
+                          </label>
+
+                          <label className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center gap-2 text-xs font-semibold cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={enableAccountBalance}
+                              onChange={(e) => setEnableAccountBalance(e.target.checked)}
+                              className="rounded text-emerald-600 focus:ring-emerald-500"
+                            />
+                            <span>Account Balance</span>
+                          </label>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                              Initiator Name <span className="text-emerald-500">*</span>
+                            </label>
+                            <input
+                              type="text"
+                              value={initiatorName}
+                              onChange={(e) => setInitiatorName(e.target.value)}
+                              placeholder="e.g. pesa_initiator"
+                              className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 font-mono text-xs text-slate-800 dark:text-slate-200 outline-none"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                              Security Credential <span className="text-emerald-500">*</span>
+                            </label>
+                            <input
+                              type={showSecrets ? 'text' : 'password'}
+                              value={securityCredential}
+                              onChange={(e) => setSecurityCredential(e.target.value)}
+                              placeholder="Encrypted Security Credential Password"
+                              className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 font-mono text-xs text-slate-800 dark:text-slate-200 outline-none"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                              Queue Timeout URL
+                            </label>
+                            <input
+                              type="text"
+                              value={queueTimeoutUrl}
+                              onChange={(e) => setQueueTimeoutUrl(e.target.value)}
+                              placeholder="https://.../api/b2c/timeout"
+                              className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 font-mono text-xs text-slate-800 dark:text-slate-200 outline-none"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                              Result URL
+                            </label>
+                            <input
+                              type="text"
+                              value={resultUrl}
+                              onChange={(e) => setResultUrl(e.target.value)}
+                              placeholder="https://.../api/b2c/result"
+                              className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 font-mono text-xs text-slate-800 dark:text-slate-200 outline-none"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                              B2C Command ID
+                            </label>
+                            <select
+                              value={b2cCommandId}
+                              onChange={(e) => setB2cCommandId(e.target.value)}
+                              className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-xs font-semibold text-slate-800 dark:text-slate-200 outline-none"
+                            >
+                              <option value="BusinessPayment">BusinessPayment (Standard Payout)</option>
+                              <option value="SalaryPayment">SalaryPayment (Payroll Disbursements)</option>
+                              <option value="PromotionPayment">PromotionPayment (Rewards & Cashbacks)</option>
+                            </select>
+                          </div>
+
+                          <div>
+                            <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                              B2B Command ID
+                            </label>
+                            <select
+                              value={b2bCommandId}
+                              onChange={(e) => setB2bCommandId(e.target.value)}
+                              className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-xs font-semibold text-slate-800 dark:text-slate-200 outline-none"
+                            >
+                              <option value="BusinessPayBill">BusinessPayBill (PayBill Transfer)</option>
+                              <option value="BusinessBuyGoods">BusinessBuyGoods (Till Settlement)</option>
+                              <option value="DisburseFundsToBusiness">DisburseFundsToBusiness (Corporate Transfer)</option>
+                            </select>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
               )}
 
               {/* Stripe Form Fields */}
@@ -1374,6 +1953,322 @@ export const PaymentMethodsView: React.FC<Props> = ({
         </div>
       )}
 
+      {/* Operations Test Lab Modal */}
+      {isTestLabOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in duration-150 overflow-y-auto">
+          <div className="relative w-full max-w-2xl max-h-[90vh] my-auto bg-slate-900 text-slate-100 rounded-3xl shadow-2xl border border-slate-800 p-6 overflow-y-auto">
+            {/* Header */}
+            <div className="flex items-center justify-between pb-4 border-b border-slate-800">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center border border-emerald-500/30">
+                  <Terminal className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-extrabold text-white flex items-center gap-2">
+                    M-PESA Daraja 11-Service Operations Test Lab
+                    <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 text-[10px] font-mono">
+                      LIVE ENVIRONMENT
+                    </span>
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    Test target gateway: <strong className="text-emerald-400">{testLabTargetPm?.name || 'Default Daraja Target'}</strong> ({testLabTargetPm?.shortcodeOrNumber || 'Shortcode'})
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsTestLabOpen(false)}
+                className="w-8 h-8 rounded-full bg-slate-800 text-slate-400 hover:text-slate-200 flex items-center justify-center cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Test Tabs */}
+            <div className="mt-4 flex items-center gap-1.5 overflow-x-auto pb-2 scrollbar-none border-b border-slate-800">
+              {[
+                { id: 'STK_PUSH', label: 'STK Push Express' },
+                { id: 'C2B', label: 'C2B Simulate' },
+                { id: 'B2C', label: 'B2C Payout' },
+                { id: 'B2B', label: 'B2B Transfer' },
+                { id: 'TRANSACTION_STATUS', label: 'Status Query' },
+                { id: 'REVERSAL', label: 'Reversal' },
+                { id: 'ACCOUNT_BALANCE', label: 'Account Balance' },
+                { id: 'REGISTER_URLS', label: 'Register C2B URLs' },
+              ].map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => {
+                    setActiveTestTab(tab.id as any);
+                    setTestResultLog(null);
+                  }}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition cursor-pointer ${
+                    activeTestTab === tab.id
+                      ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20'
+                      : 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-slate-200'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Tab Form Inputs */}
+            <div className="mt-4 space-y-4">
+              {activeTestTab === 'STK_PUSH' && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">Payer Phone Number (MSISDN)</label>
+                    <input
+                      type="text"
+                      value={testPhone}
+                      onChange={(e) => setTestPhone(e.target.value)}
+                      placeholder="e.g. 0712345678"
+                      className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 font-mono text-xs text-emerald-400 outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">Amount (KES)</label>
+                    <input
+                      type="number"
+                      value={testAmount}
+                      onChange={(e) => setTestAmount(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 font-mono text-xs text-white outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">Account Reference</label>
+                    <input
+                      type="text"
+                      value={testBillRef}
+                      onChange={(e) => setTestBillRef(e.target.value)}
+                      placeholder="INV-001"
+                      className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 font-mono text-xs text-slate-300 outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">Transaction Description</label>
+                    <input
+                      type="text"
+                      value={testRemarks}
+                      onChange={(e) => setTestRemarks(e.target.value)}
+                      placeholder="Test STK Push"
+                      className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-300 outline-none"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {activeTestTab === 'C2B' && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">Simulated Customer Phone</label>
+                    <input
+                      type="text"
+                      value={testPhone}
+                      onChange={(e) => setTestPhone(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 font-mono text-xs text-emerald-400 outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">Amount (KES)</label>
+                    <input
+                      type="number"
+                      value={testAmount}
+                      onChange={(e) => setTestAmount(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 font-mono text-xs text-white outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">Bill Reference Number</label>
+                    <input
+                      type="text"
+                      value={testBillRef}
+                      onChange={(e) => setTestBillRef(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 font-mono text-xs text-slate-300 outline-none"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {activeTestTab === 'B2C' && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">Recipient Phone Number</label>
+                    <input
+                      type="text"
+                      value={testPhone}
+                      onChange={(e) => setTestPhone(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 font-mono text-xs text-emerald-400 outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">Payout Amount (KES)</label>
+                    <input
+                      type="number"
+                      value={testAmount}
+                      onChange={(e) => setTestAmount(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 font-mono text-xs text-white outline-none"
+                    />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">Remarks / Note</label>
+                    <input
+                      type="text"
+                      value={testRemarks}
+                      onChange={(e) => setTestRemarks(e.target.value)}
+                      placeholder="Supplier Payment / Dividend"
+                      className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-300 outline-none"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {activeTestTab === 'B2B' && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">Receiver Shortcode</label>
+                    <input
+                      type="text"
+                      value={testReceiverShortcode}
+                      onChange={(e) => setTestReceiverShortcode(e.target.value)}
+                      placeholder="e.g. 600982"
+                      className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 font-mono text-xs text-emerald-400 outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">Amount (KES)</label>
+                    <input
+                      type="number"
+                      value={testAmount}
+                      onChange={(e) => setTestAmount(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 font-mono text-xs text-white outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">Account Reference</label>
+                    <input
+                      type="text"
+                      value={testBillRef}
+                      onChange={(e) => setTestBillRef(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 font-mono text-xs text-slate-300 outline-none"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {(activeTestTab === 'TRANSACTION_STATUS' || activeTestTab === 'REVERSAL') && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">M-PESA Receipt Number</label>
+                    <input
+                      type="text"
+                      value={testMpesaReceipt}
+                      onChange={(e) => setTestMpesaReceipt(e.target.value)}
+                      placeholder="e.g. NLX8921021K"
+                      className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 font-mono text-xs text-emerald-400 outline-none"
+                    />
+                  </div>
+                  {activeTestTab === 'REVERSAL' && (
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-300 mb-1">Reversal Amount (KES)</label>
+                      <input
+                        type="number"
+                        value={testAmount}
+                        onChange={(e) => setTestAmount(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 font-mono text-xs text-white outline-none"
+                      />
+                    </div>
+                  )}
+                  <div className="sm:col-span-2">
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">Remarks</label>
+                    <input
+                      type="text"
+                      value={testRemarks}
+                      onChange={(e) => setTestRemarks(e.target.value)}
+                      placeholder="Audit / Query"
+                      className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-300 outline-none"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {activeTestTab === 'ACCOUNT_BALANCE' && (
+                <div>
+                  <p className="text-xs text-slate-400 leading-relaxed bg-slate-950 p-3 rounded-2xl border border-slate-800">
+                    Executes Daraja Account Balance query for shortcode{' '}
+                    <strong className="text-emerald-400 font-mono">{testLabTargetPm?.shortcodeOrNumber || 'Shortcode'}</strong>.
+                    Results will be posted asynchronously to the registered Result URL.
+                  </p>
+                </div>
+              )}
+
+              {activeTestTab === 'REGISTER_URLS' && (
+                <div>
+                  <p className="text-xs text-slate-400 leading-relaxed bg-slate-950 p-3 rounded-2xl border border-slate-800 space-y-1">
+                    <div>Registers C2B Validation & Confirmation endpoints with Safaricom Daraja API:</div>
+                    <div className="font-mono text-[11px] text-emerald-400">
+                      Validation: {testLabTargetPm?.validationUrl || 'https://.../api/c2b/validation'}
+                    </div>
+                    <div className="font-mono text-[11px] text-emerald-400">
+                      Confirmation: {testLabTargetPm?.confirmationUrl || 'https://.../api/c2b/confirmation'}
+                    </div>
+                  </p>
+                </div>
+              )}
+
+              {/* Action Button */}
+              <div className="pt-2 flex items-center justify-between">
+                <span className="text-[11px] text-slate-400 flex items-center gap-1">
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                  OAuth 2.0 Auth Header Auto-Generated
+                </span>
+
+                <button
+                  onClick={handleRunTestLab}
+                  disabled={testRunning}
+                  className="px-5 py-2.5 bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-slate-950 font-extrabold rounded-xl text-xs transition shadow-lg shadow-emerald-500/20 flex items-center gap-2 cursor-pointer"
+                >
+                  {testRunning ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      <span>Executing Request...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Play className="w-4 h-4 fill-slate-950" />
+                      <span>Execute Daraja Request</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
+              {/* Execution Output Console */}
+              {testResultLog && (
+                <div className="mt-4 p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-2 animate-in fade-in duration-150">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-mono font-bold flex items-center gap-2">
+                      <Terminal className="w-4 h-4 text-emerald-400" />
+                      Response Log [{testResultLog.timestamp.slice(11, 19)}]
+                    </span>
+                    <span
+                      className={`px-2 py-0.5 rounded-md text-[10px] font-mono font-bold ${
+                        testResultLog.ok ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'
+                      }`}
+                    >
+                      HTTP {testResultLog.status}
+                    </span>
+                  </div>
+
+                  <pre className="p-3 rounded-xl bg-slate-900 border border-slate-800/80 font-mono text-[11px] text-emerald-400 overflow-x-auto max-h-48 leading-relaxed">
+                    {JSON.stringify(testResultLog.data || testResultLog, null, 2)}
+                  </pre>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Delete Confirmation Modal */}
       {deletingMethod && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in duration-150">
@@ -1436,6 +2331,34 @@ export const PaymentMethodsView: React.FC<Props> = ({
           </div>
         </div>
       )}
+
+      {/* M-PESA Daraja Integration Wizard Modal */}
+      <DarajaIntegrationWizardModal
+        isOpen={isWizardOpen}
+        onClose={() => {
+          setIsWizardOpen(false);
+          setWizardEditingMethod(null);
+        }}
+        branches={branches}
+        editingMethod={wizardEditingMethod}
+        onSavePaymentMethod={async (payload) => {
+          if (wizardEditingMethod) {
+            await onUpdatePaymentMethod(wizardEditingMethod.id, payload);
+            setToastFeedback({
+              type: 'success',
+              message: `M-PESA channel "${payload.name || wizardEditingMethod.name}" updated & validated successfully!`,
+            });
+          } else {
+            await onAddPaymentMethod(payload);
+            setToastFeedback({
+              type: 'success',
+              message: `M-PESA channel "${payload.name}" created & activated successfully!`,
+            });
+          }
+          setIsWizardOpen(false);
+          setWizardEditingMethod(null);
+        }}
+      />
     </div>
   );
 };

@@ -497,8 +497,8 @@ async function startServer() {
     // 1. Sync In-Memory State for active tenant
     const tenantBiz = businessesList.find((b) => b.id === businessId) || (businessState.id === businessId ? businessState : null);
     if (tenantBiz) {
-      tenantBiz.subscriptionTier = subscriptionData.subscriptionTier;
-      tenantBiz.subscriptionStatus = subscriptionData.subscriptionStatus;
+      tenantBiz.subscriptionTier = subscriptionData.subscriptionTier as any;
+      tenantBiz.subscriptionStatus = subscriptionData.subscriptionStatus as any;
       tenantBiz.subscriptionRenewalDate = subscriptionData.subscriptionRenewalDate;
       tenantBiz.maxBranches = subscriptionData.maxBranches;
       tenantBiz.maxStaff = subscriptionData.maxStaff;
@@ -2050,6 +2050,11 @@ async function startServer() {
     });
   });
 
+  // Alias for /api/c2b/simulate
+  app.post('/api/c2b/simulate', (req, res) => {
+    return (app as any)._router.handle(req, res);
+  });
+
   // Safaricom Transaction Reversal Request Endpoint
   app.post('/api/daraja/reversal', (req, res) => {
     const tenantId = getTenantId(req);
@@ -2205,7 +2210,7 @@ async function startServer() {
   // --- STK PUSH ENGINE & CALLBACK SIMULATION ---
 
   // Initiate STK Push
-  app.post('/api/stkpush/initiate', (req, res) => {
+  app.post(['/api/stkpush', '/api/stkpush/initiate'], (req, res) => {
     const { phone, amount, customerName, description, branchId, paymentMethodId, paymentMethodType, shortcodeOrNumber, accountNumber } = req.body;
 
     if (!phone || !amount || amount <= 0) {
@@ -2925,6 +2930,9 @@ async function startServer() {
         status: 'SUCCESS',
         description: `PesaRequest Subscription: ${targetPlan.name} (${targetPlan.tier} Tier)`,
         businessId: businessId,
+        branchId: 'branch-001',
+        branchName: 'Headquarters',
+        createdByStaffName: 'Safaricom Daraja Webhook',
         createdAt: timestamp,
         completedAt: timestamp,
         resultCode: 0,
