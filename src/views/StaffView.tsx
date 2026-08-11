@@ -1,27 +1,43 @@
 import React, { useState } from 'react';
 import { UserCheck, Plus, ShieldCheck, Mail, Phone, Lock, CheckCircle2, XCircle } from 'lucide-react';
-import { User, UserRole, Branch } from '../types';
+import { User, UserRole, Branch, Business } from '../types';
 import { getUserInitials } from '../components/Header';
+import { UpgradeRequiredModal } from '../components/UpgradeRequiredModal';
 
 interface Props {
   users: User[];
   branches: Branch[];
+  currentBusiness?: Business;
   onInviteStaff: (user: Partial<User>) => void;
   onUpdateRole: (userId: string, role: UserRole) => void;
+  onNavigateToCheckout?: (planId?: string) => void;
 }
 
 export const StaffView: React.FC<Props> = ({
   users,
   branches,
+  currentBusiness,
   onInviteStaff,
   onUpdateRole,
+  onNavigateToCheckout,
 }) => {
   const [showInviteModal, setShowInviteModal] = useState(false);
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [role, setRole] = useState<UserRole>('CASHIER');
   const [selectedBranchId, setSelectedBranchId] = useState(branches[0]?.id || '');
+
+  const maxStaff = currentBusiness?.maxStaff || 5;
+
+  const handleOpenInvite = () => {
+    if (users.length >= maxStaff && maxStaff !== 0) {
+      setShowUpgradeModal(true);
+      return;
+    }
+    setShowInviteModal(true);
+  };
 
   const rolesList: { role: UserRole; label: string; permissions: string }[] = [
     { role: 'BUSINESS_OWNER', label: 'Business Owner', permissions: 'Full access to Daraja credentials, billing, staff & branches' },
@@ -54,7 +70,7 @@ export const StaffView: React.FC<Props> = ({
         </div>
 
         <button
-          onClick={() => setShowInviteModal(true)}
+          onClick={handleOpenInvite}
           className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow-lg flex items-center gap-2 transition"
         >
           <Plus className="w-4 h-4" />
@@ -257,6 +273,20 @@ export const StaffView: React.FC<Props> = ({
           </form>
         </div>
       )}
+
+      <UpgradeRequiredModal
+        isOpen={showUpgradeModal}
+        onClose={() => setShowUpgradeModal(false)}
+        onUpgradeClick={(targetPlanId) => {
+          if (onNavigateToCheckout) onNavigateToCheckout(targetPlanId);
+        }}
+        title="Staff Member Quota Limit Reached"
+        message={`Your current ${currentBusiness?.subscriptionTier || 'STARTER'} plan permits up to ${maxStaff} staff accounts (${users.length}/${maxStaff} active). Upgrade your plan to invite additional cashiers, managers, or auditors.`}
+        currentTier={currentBusiness?.subscriptionTier || 'STARTER'}
+        limitType="STAFF"
+        currentUsage={users.length}
+        maxLimit={maxStaff}
+      />
     </div>
   );
 };

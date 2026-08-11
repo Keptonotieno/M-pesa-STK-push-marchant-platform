@@ -18,6 +18,7 @@ import {
   ChevronRight,
   Activity,
   X,
+  Crown,
 } from 'lucide-react';
 import { UserRole, Business } from '../types';
 
@@ -49,6 +50,12 @@ export const Sidebar: React.FC<Props> = ({
   onCloseMobile,
 }) => {
   const menuGroups: { title: string; items: MenuItem[] }[] = [
+    {
+      title: 'SUPER ADMIN PORTAL',
+      items: [
+        { id: 'admin_portal', label: 'Admin Portal Console', icon: Crown, minRole: 'SUPER_ADMIN' },
+      ],
+    },
     {
       title: 'PUBLIC & OVERVIEW',
       items: [

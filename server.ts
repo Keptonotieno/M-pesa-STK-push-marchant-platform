@@ -38,13 +38,56 @@ import {
   WebhookLog,
 } from './src/types';
 
+// Super Admin Account Configuration
+const SUPER_ADMIN_EMAIL = 'keptonotieno@gmail.com';
+const SUPER_ADMIN_PASSWORD = 'kepton@12Romez';
+
+const superAdminUser: User = {
+  id: 'usr-super-admin-001',
+  name: 'Kepton Otieno (Super Admin)',
+  email: SUPER_ADMIN_EMAIL,
+  phone: '+254 712 345 678',
+  role: 'SUPER_ADMIN',
+  businessId: 'biz-platform-hq',
+  status: 'ACTIVE',
+  createdAt: '2026-01-01T00:00:00Z',
+  emailVerified: true,
+  phoneVerified: true,
+};
+
+const superAdminBiz: Business = {
+  id: 'biz-platform-hq',
+  name: 'PesaRequest Master Platform HQ',
+  category: 'Large Enterprise',
+  paybill: '522522',
+  tillNumber: '174379',
+  subscriptionTier: 'ENTERPRISE',
+  subscriptionStatus: 'ACTIVE',
+  subscriptionRenewalDate: '2030-12-31T23:59:59Z',
+  maxBranches: 999,
+  maxStaff: 999,
+  maxTransactions: 99999999,
+  unlockedFeatures: ['STK_PUSH', 'AUTO_DISCON', 'ANALYTICS', 'B2C_PAYOUTS', 'WEBHOOKS', 'SUPER_ADMIN'],
+  status: 'ACTIVE',
+  verificationStatus: 'VERIFIED',
+  emailVerified: true,
+  phoneVerified: true,
+  onboardingCompleted: true,
+  onboardingStep: 5,
+  createdAt: '2026-01-01T00:00:00Z',
+  address: 'Safaricom HQ, Waiyaki Way, Nairobi',
+  kraPin: 'P051882910Z',
+  contactEmail: SUPER_ADMIN_EMAIL,
+  contactPhone: '+254 712 345 678',
+};
+
 // In-memory data store for live CRUD & STK push simulation
 let businessState: Business = { ...initialBusiness };
 let activeSessionUser: User | null = null;
 let activeSessionBiz: Business | null = null;
-let businessesList: Business[] = [{ ...initialBusiness }];
+let businessesList: Business[] = [superAdminBiz, { ...initialBusiness }];
 let branchesState: Branch[] = [...initialBranches];
-let usersState: User[] = [...initialUsers];
+let usersState: User[] = [superAdminUser, ...initialUsers];
 let customersState: Customer[] = [...initialCustomers];
 let transactionsState: Transaction[] = [...initialTransactions];
 let notificationsState: NotificationItem[] = [...initialNotifications];
@@ -475,6 +518,176 @@ async function startServer() {
     return headerTenant || queryTenant || (activeSessionBiz ? activeSessionBiz.id : businessState.id);
   }
 
+  // Backend Validation Middleware enforcing plan-specific constraints (staff, branches, transactions, payouts)
+  const validatePlanEntitlements = (resource: 'STAFF' | 'BRANCH' | 'TRANSACTION' | 'B2C_B2B') => {
+    return (req: express.Request, res: express.Response, next: express.NextFunction) => {
+      const tenantId = getTenantId(req);
+      const tenantBiz = businessesList.find((b) => b.id === tenantId) || businessState;
+
+      // 1. Enforce Subscription Inactive / Expired Status Check
+      if (tenantBiz.subscriptionStatus === 'EXPIRED' || tenantBiz.subscriptionStatus === 'CANCELLED' || tenantBiz.status === 'SUSPENDED') {
+        return res.status(403).json({
+          success: false,
+          error: 'SUBSCRIPTION_INACTIVE',
+          message: `Your business subscription status is currently ${tenantBiz.subscriptionStatus || tenantBiz.status}. Please renew your subscription plan to perform this operation.`,
+          subscriptionStatus: tenantBiz.subscriptionStatus || tenantBiz.status,
+        });
+      }
+
+      const currentPlan = subscriptionPlansState.find((p) => p.tier === tenantBiz.subscriptionTier) || subscriptionPlansState[0];
+
+      if (resource === 'STAFF') {
+        const maxStaff = tenantBiz.maxStaff !== undefined ? tenantBiz.maxStaff : currentPlan.maxStaff;
+        const currentStaffCount = usersState.filter((u) => u.businessId === tenantId).length;
+        if (maxStaff > 0 && currentStaffCount >= maxStaff) {
+          return res.status(403).json({
+            success: false,
+            error: 'PLAN_LIMIT_EXCEEDED',
+            message: `Staff account limit reached (${currentStaffCount}/${maxStaff}) for your ${tenantBiz.subscriptionTier} plan. Please upgrade your subscription to invite more staff members.`,
+            currentUsage: currentStaffCount,
+            maxLimit: maxStaff,
+            tier: tenantBiz.subscriptionTier,
+          });
+        }
+      } else if (resource === 'BRANCH') {
+        const maxBranches = tenantBiz.maxBranches !== undefined ? tenantBiz.maxBranches : currentPlan.maxBranches;
+        const currentBranchesCount = branchesState.filter((b) => b.businessId === tenantId).length;
+        if (maxBranches > 0 && currentBranchesCount >= maxBranches) {
+          return res.status(403).json({
+            success: false,
+            error: 'PLAN_LIMIT_EXCEEDED',
+            message: `Branch limit reached (${currentBranchesCount}/${maxBranches}) for your ${tenantBiz.subscriptionTier} plan. Please upgrade your subscription to add more store locations.`,
+            currentUsage: currentBranchesCount,
+            maxLimit: maxBranches,
+            tier: tenantBiz.subscriptionTier,
+          });
+        }
+      } else if (resource === 'TRANSACTION') {
+        const maxTxs = tenantBiz.maxTransactions !== undefined ? tenantBiz.maxTransactions : currentPlan.maxTransactions;
+        const currentMonthlyTxs = transactionsState.filter((t) => t.businessId === tenantId).length;
+        if (maxTxs > 0 && currentMonthlyTxs >= maxTxs) {
+          return res.status(403).json({
+            success: false,
+            error: 'PLAN_LIMIT_EXCEEDED',
+            message: `Monthly STK Push quota limit reached (${currentMonthlyTxs}/${maxTxs}) for your ${tenantBiz.subscriptionTier} plan. Please upgrade your subscription to process more M-PESA payments.`,
+            currentUsage: currentMonthlyTxs,
+            maxLimit: maxTxs,
+            tier: tenantBiz.subscriptionTier,
+          });
+        }
+      } else if (resource === 'B2C_B2B') {
+        const hasPayouts = tenantBiz.unlockedFeatures?.includes('B2C_PAYOUTS') || currentPlan.features.includes('B2C_PAYOUTS');
+        if (!hasPayouts) {
+          return res.status(403).json({
+            success: false,
+            error: 'FEATURE_NOT_ENTITLED',
+            message: `B2C Disbursements & B2B Transfers are not unlocked on the ${tenantBiz.subscriptionTier} plan. Please upgrade to GROWTH or ENTERPRISE plan.`,
+            tier: tenantBiz.subscriptionTier,
+          });
+        }
+      }
+
+      next();
+    };
+  };
+
+  // Rate limiting map for multi-tenant API protection
+  const rateLimitMap = new Map<string, { count: number; resetTime: number }>();
+  const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
+  const RATE_LIMIT_MAX_REQUESTS = 120; // 120 requests/min per tenant
+
+  // Strict Multi-Tenant Isolation, Rate Limiting & Onboarding/Verification Middleware
+  app.use('/api/*', (req, res, next) => {
+    // 0. Rate Limiting Enforcement per businessId (preventing API abuse across multi-tenant architecture)
+    const isWebhookOrCallback = req.path.startsWith('/api/stkpush/callback') || req.path.startsWith('/api/webhooks');
+    if (!isWebhookOrCallback) {
+      const tenantId = getTenantId(req) || req.ip || 'anonymous-tenant';
+      const now = Date.now();
+      let record = rateLimitMap.get(tenantId);
+
+      if (!record || now > record.resetTime) {
+        record = { count: 1, resetTime: now + RATE_LIMIT_WINDOW_MS };
+        rateLimitMap.set(tenantId, record);
+      } else {
+        record.count += 1;
+      }
+
+      const remaining = Math.max(0, RATE_LIMIT_MAX_REQUESTS - record.count);
+      const resetSec = Math.ceil((record.resetTime - now) / 1000);
+
+      res.setHeader('X-RateLimit-Limit', RATE_LIMIT_MAX_REQUESTS);
+      res.setHeader('X-RateLimit-Remaining', remaining);
+      res.setHeader('X-RateLimit-Reset', resetSec);
+
+      if (record.count > RATE_LIMIT_MAX_REQUESTS) {
+        return res.status(429).json({
+          success: false,
+          error: 'RATE_LIMIT_EXCEEDED',
+          message: `Rate limit exceeded for business ID "${tenantId}" (${RATE_LIMIT_MAX_REQUESTS} requests/min). Please wait ${resetSec} seconds before retrying.`,
+          retryAfterSeconds: resetSec,
+        });
+      }
+    }
+
+    // Open endpoints that don't require tenant dashboard authorization
+    const openPaths = [
+      '/api/health',
+      '/api/auth/login',
+      '/api/auth/register',
+      '/api/auth/send-otp',
+      '/api/auth/verify-otp',
+      '/api/auth/check-availability',
+      '/api/auth/me',
+      '/api/auth/verify-merchant',
+      '/api/auth/logout',
+      '/api/auth/update-user-status',
+      '/api/stkpush/callback',
+      '/api/webhooks',
+      '/api/subscriptions/plans',
+      '/api/admin',
+      '/api/businesses',
+    ];
+
+    if (openPaths.some((p) => req.path.startsWith(p))) {
+      return next();
+    }
+
+    const requestedTenantId = getTenantId(req);
+
+    // 1. Session Isolation Check: Verify active session user belongs to the requested businessId
+    if (activeSessionUser && activeSessionUser.role !== 'SUPER_ADMIN') {
+      if (activeSessionUser.businessId && requestedTenantId && activeSessionUser.businessId !== requestedTenantId) {
+        return res.status(403).json({
+          success: false,
+          error: 'UNAUTHORIZED_CROSS_TENANT_ACCESS',
+          message: `Multi-tenant security isolation violation: User (${activeSessionUser.email}) cannot access data for business ID "${requestedTenantId}". Access denied.`,
+        });
+      }
+    }
+
+    // 2. Business Onboarding & Verification Completion Check
+    const tenantBiz = businessesList.find((b) => b.id === requestedTenantId) || (businessState && businessState.id === requestedTenantId ? businessState : null);
+
+    if (tenantBiz) {
+      const isVerified = tenantBiz.status === 'ACTIVE' && (tenantBiz.verificationStatus === 'VERIFIED' || !tenantBiz.verificationStatus);
+      const isOnboarded = tenantBiz.onboardingCompleted !== false;
+
+      // Allow subscription management during onboarding
+      const isSubscriptionRoute = req.path.startsWith('/api/subscriptions');
+
+      if ((!isVerified || !isOnboarded) && !isSubscriptionRoute) {
+        return res.status(403).json({
+          success: false,
+          onboardingIncomplete: true,
+          requiredStep: tenantBiz.onboardingStep || 1,
+          message: 'Merchant business verification incomplete. Dashboard API access is locked until onboarding and verification are complete.',
+        });
+      }
+    }
+
+    next();
+  });
+
   // --- SUBSCRIPTION & FIRESTORE ENGINE HELPERS ---
 
   // Update Business subscription status in Firestore database
@@ -902,11 +1115,30 @@ async function startServer() {
   });
 
   app.post('/api/auth/login', (req, res) => {
-    const { email } = req.body;
+    const { email, password } = req.body;
     if (!email) {
       return res.status(400).json({ success: false, message: 'Email address is required' });
     }
-    const user = usersState.find((u) => u.email.toLowerCase() === email?.toLowerCase());
+    const cleanEmail = email.toLowerCase().trim();
+
+    // Check for Super Admin Login
+    if (cleanEmail === SUPER_ADMIN_EMAIL.toLowerCase()) {
+      if (password && password !== SUPER_ADMIN_PASSWORD) {
+        return res.status(401).json({ success: false, message: 'Invalid password for Super Admin account.' });
+      }
+      activeSessionUser = superAdminUser;
+      activeSessionBiz = superAdminBiz;
+      businessState = superAdminBiz;
+      return res.json({
+        success: true,
+        user: superAdminUser,
+        business: superAdminBiz,
+        token: 'jwt_mock_token_superadmin_' + superAdminUser.id,
+        isSuperAdmin: true,
+      });
+    }
+
+    const user = usersState.find((u) => u.email.toLowerCase() === cleanEmail);
     if (!user) {
       return res.status(404).json({ success: false, message: 'User account not found. Please register your business.' });
     }
@@ -920,6 +1152,102 @@ async function startServer() {
       business: userBiz,
       token: 'jwt_mock_token_pesarequest_' + user.id,
     });
+  });
+
+  // Business List & Super Admin Management Routes
+  app.get('/api/businesses', (req, res) => {
+    res.json({ success: true, businesses: businessesList });
+  });
+
+  app.post('/api/businesses/create', (req, res) => {
+    const { name, category, ownerName, contactEmail, contactPhone, subscriptionTier } = req.body;
+    const newBizId = 'biz-' + Date.now();
+    const newBiz: Business = {
+      id: newBizId,
+      name: name || 'New Merchant Business',
+      category: category || 'Retail Shop',
+      paybill: '522522',
+      tillNumber: '174' + Math.floor(100 + Math.random() * 900),
+      subscriptionTier: subscriptionTier || 'STARTER',
+      subscriptionStatus: 'ACTIVE',
+      subscriptionRenewalDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+      maxBranches: subscriptionTier === 'ENTERPRISE' ? 99 : subscriptionTier === 'GROWTH' ? 10 : 3,
+      maxStaff: subscriptionTier === 'ENTERPRISE' ? 99 : subscriptionTier === 'GROWTH' ? 20 : 5,
+      maxTransactions: subscriptionTier === 'ENTERPRISE' ? 100000 : subscriptionTier === 'GROWTH' ? 10000 : 1000,
+      unlockedFeatures: ['STK_PUSH', 'AUTO_DISCON', 'ANALYTICS'],
+      status: 'ACTIVE',
+      verificationStatus: 'VERIFIED',
+      emailVerified: true,
+      phoneVerified: true,
+      onboardingCompleted: true,
+      onboardingStep: 5,
+      createdAt: new Date().toISOString(),
+      address: 'Nairobi, Kenya',
+      kraPin: 'P051' + Math.floor(100000 + Math.random() * 900000) + 'Z',
+      contactEmail: contactEmail || 'owner@merchant.co.ke',
+      contactPhone: contactPhone || '+254700000000',
+    };
+
+    const newUser: User = {
+      id: 'usr-' + Date.now(),
+      name: ownerName || name + ' Owner',
+      email: contactEmail || 'owner@merchant.co.ke',
+      phone: contactPhone || '+254700000000',
+      role: 'BUSINESS_OWNER',
+      businessId: newBizId,
+      status: 'ACTIVE',
+      createdAt: new Date().toISOString(),
+      emailVerified: true,
+      phoneVerified: true,
+    };
+
+    businessesList.unshift(newBiz);
+    usersState.unshift(newUser);
+
+    auditLogsState.unshift({
+      id: 'log-' + Date.now(),
+      businessId: newBizId,
+      timestamp: new Date().toISOString(),
+      action: 'MERCHANT_CREATED_BY_SUPER_ADMIN',
+      actorName: activeSessionUser ? activeSessionUser.name : 'Super Admin',
+      actorRole: 'SUPER_ADMIN',
+      details: `Super Admin created new merchant business "${name}" (${newBizId}) with tier ${newBiz.subscriptionTier}.`,
+      ipAddress: '127.0.0.1',
+    });
+
+    res.json({ success: true, business: newBiz, user: newUser });
+  });
+
+  app.put('/api/businesses/:id/status', (req, res) => {
+    const { id } = req.params;
+    const { status } = req.body;
+    const target = businessesList.find((b) => b.id === id);
+    if (!target) return res.status(404).json({ success: false, message: 'Business not found' });
+    target.status = status;
+    if (status === 'ACTIVE') {
+      target.verificationStatus = 'VERIFIED';
+    }
+    res.json({ success: true, business: target });
+  });
+
+  app.put('/api/businesses/:id/tier', (req, res) => {
+    const { id } = req.params;
+    const { tier } = req.body;
+    const target = businessesList.find((b) => b.id === id);
+    if (!target) return res.status(404).json({ success: false, message: 'Business not found' });
+    target.subscriptionTier = tier;
+    target.subscriptionStatus = 'ACTIVE';
+    target.maxBranches = tier === 'ENTERPRISE' ? 99 : tier === 'GROWTH' ? 10 : tier === 'STARTER' ? 3 : 1;
+    target.maxStaff = tier === 'ENTERPRISE' ? 99 : tier === 'GROWTH' ? 20 : tier === 'STARTER' ? 5 : 2;
+    target.maxTransactions = tier === 'ENTERPRISE' ? 100000 : tier === 'GROWTH' ? 10000 : tier === 'STARTER' ? 1000 : 100;
+    res.json({ success: true, business: target });
+  });
+
+  app.delete('/api/businesses/:id', (req, res) => {
+    const { id } = req.params;
+    businessesList = businessesList.filter((b) => b.id !== id);
+    usersState = usersState.filter((u) => u.businessId !== id);
+    res.json({ success: true, message: 'Business deleted successfully' });
   });
 
   app.post('/api/auth/logout', (req, res) => {
@@ -1181,6 +1509,11 @@ async function startServer() {
 
     // Upgrade business status to ACTIVE / VERIFIED
     targetBiz.status = 'ACTIVE';
+    targetBiz.verificationStatus = 'VERIFIED';
+    targetBiz.onboardingCompleted = true;
+    targetBiz.onboardingStep = 5;
+    targetBiz.emailVerified = true;
+    targetBiz.phoneVerified = true;
     if (cleanPin) targetBiz.kraPin = cleanPin;
 
     businessState = targetBiz;
@@ -1244,7 +1577,12 @@ async function startServer() {
       maxStaff: plan.maxStaff,
       maxTransactions: plan.maxTransactions,
       unlockedFeatures: plan.features,
-      status: 'ACTIVE',
+      status: 'PENDING_VERIFICATION',
+      verificationStatus: 'PENDING_VERIFICATION',
+      emailVerified: false,
+      phoneVerified: false,
+      onboardingCompleted: false,
+      onboardingStep: 2,
       createdAt: new Date().toISOString(),
       address: address || 'Nairobi, Kenya',
       kraPin: kraPin ? kraPin.toUpperCase().trim() : ('P051' + Math.floor(1000000 + Math.random() * 9000000) + 'Z'),
@@ -1872,8 +2210,49 @@ async function startServer() {
     });
   });
 
+  // Callback endpoint test runner for Integration Initialization Wizard
+  app.post('/api/daraja/test-callback', (req, res) => {
+    const { checkoutRequestId, merchantRequestId, callbackUrl, resultCode, resultDesc, amount, customerPhone } = req.body;
+
+    webhookLogsState.unshift({
+      id: 'wh-' + Date.now(),
+      timestamp: new Date().toISOString(),
+      eventType: 'STK_PUSH_CALLBACK',
+      merchantRequestId: merchantRequestId || 'MR-TEST-' + Date.now(),
+      checkoutRequestId: checkoutRequestId || 'ws_CO_TEST-' + Date.now(),
+      resultCode: resultCode !== undefined ? resultCode : 0,
+      resultDesc: resultDesc || 'The service request has been processed successfully.',
+      amount: amount || 10,
+      mpesaReceipt: 'NLX' + Math.random().toString(36).substring(2, 8).toUpperCase(),
+      customerPhone: customerPhone || '254712345678',
+      rawPayload: {
+        Body: {
+          stkCallback: {
+            MerchantRequestID: merchantRequestId || 'MR-TEST-001',
+            CheckoutRequestID: checkoutRequestId || 'ws_CO_TEST-001',
+            ResultCode: resultCode !== undefined ? resultCode : 0,
+            ResultDesc: resultDesc || 'The service request has been processed successfully.',
+          },
+        },
+      },
+      ipAddress: '196.201.214.200',
+      httpStatus: 200,
+    });
+
+    res.json({
+      success: true,
+      message: `Webhook callback successfully received and processed by target listener at ${callbackUrl || '/api/stkpush/callback'}.`,
+      parsedPayload: {
+        resultCode: 0,
+        resultDesc: 'Success',
+        merchantRequestId: merchantRequestId || 'MR-TEST-001',
+        checkoutRequestId: checkoutRequestId || 'ws_CO_TEST-001',
+      },
+    });
+  });
+
   // Safaricom B2C Disbursement Endpoint (Business to Customer)
-  app.post('/api/daraja/b2c', (req, res) => {
+  app.post('/api/daraja/b2c', validatePlanEntitlements('B2C_B2B'), (req, res) => {
     const tenantId = getTenantId(req);
     const { phone, amount, commandId, remarks, occasion, idempotencyKey } = req.body;
 
@@ -1948,7 +2327,7 @@ async function startServer() {
   });
 
   // Safaricom B2B Transfer Endpoint (Business to Business)
-  app.post('/api/daraja/b2b', (req, res) => {
+  app.post('/api/daraja/b2b', validatePlanEntitlements('B2C_B2B'), (req, res) => {
     const tenantId = getTenantId(req);
     const { receiverShortcode, receiverType, amount, accountReference, commandId, remarks } = req.body;
 
@@ -2210,7 +2589,7 @@ async function startServer() {
   // --- STK PUSH ENGINE & CALLBACK SIMULATION ---
 
   // Initiate STK Push
-  app.post(['/api/stkpush', '/api/stkpush/initiate'], (req, res) => {
+  app.post(['/api/stkpush', '/api/stkpush/initiate'], validatePlanEntitlements('TRANSACTION'), (req, res) => {
     const { phone, amount, customerName, description, branchId, paymentMethodId, paymentMethodType, shortcodeOrNumber, accountNumber } = req.body;
 
     if (!phone || !amount || amount <= 0) {
@@ -3861,6 +4240,35 @@ async function startServer() {
     res.json({ success: true, message: 'Transaction record deleted', deleted });
   });
 
+  app.post('/api/transactions/bulk-delete', (req, res) => {
+    const { ids } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ success: false, message: 'Valid non-empty array of transaction IDs required' });
+    }
+
+    const initialLength = transactionsState.length;
+    const idsSet = new Set(ids);
+    transactionsState = transactionsState.filter((t) => !idsSet.has(t.id));
+    const deletedCount = initialLength - transactionsState.length;
+
+    auditLogsState.unshift({
+      id: 'log-' + Date.now(),
+      businessId: getTenantId(req),
+      timestamp: new Date().toISOString(),
+      action: 'BULK_TRANSACTION_DELETED',
+      actorName: activeSessionUser?.name || 'Business Admin',
+      actorRole: activeSessionUser?.role || 'BUSINESS_OWNER',
+      details: `Batch deleted ${deletedCount} transaction record(s).`,
+      ipAddress: req.ip || '197.237.10.45',
+    });
+
+    res.json({
+      success: true,
+      count: deletedCount,
+      message: `Successfully deleted ${deletedCount} transaction record(s).`,
+    });
+  });
+
   // Export Transactions as CSV / Sheets format
   app.get('/api/transactions/export', (req, res) => {
     const tenantId = getTenantId(req);
@@ -3985,6 +4393,35 @@ async function startServer() {
     res.json({ success: true, message: 'Customer record deleted', deleted });
   });
 
+  app.post('/api/customers/bulk-delete', (req, res) => {
+    const { ids } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ success: false, message: 'Valid non-empty array of customer IDs required' });
+    }
+
+    const initialLength = customersState.length;
+    const idsSet = new Set(ids);
+    customersState = customersState.filter((c) => !idsSet.has(c.id));
+    const deletedCount = initialLength - customersState.length;
+
+    auditLogsState.unshift({
+      id: 'log-' + Date.now(),
+      businessId: getTenantId(req),
+      timestamp: new Date().toISOString(),
+      action: 'BULK_CUSTOMER_DELETED',
+      actorName: activeSessionUser?.name || 'Business Admin',
+      actorRole: activeSessionUser?.role || 'BUSINESS_OWNER',
+      details: `Batch deleted ${deletedCount} customer record(s).`,
+      ipAddress: req.ip || '197.237.10.45',
+    });
+
+    res.json({
+      success: true,
+      count: deletedCount,
+      message: `Successfully deleted ${deletedCount} customer record(s).`,
+    });
+  });
+
   // --- BRANCHES API ---
   app.get('/api/branches', (req, res) => {
     const tenantId = getTenantId(req);
@@ -3992,7 +4429,7 @@ async function startServer() {
     res.json({ branches: tenantBranches });
   });
 
-  app.post('/api/branches', (req, res) => {
+  app.post('/api/branches', validatePlanEntitlements('BRANCH'), (req, res) => {
     const { name, location, managerName, phone, tillNumber } = req.body;
     if (!name || !location) return res.status(400).json({ message: 'Name and location required' });
     const tenantId = getTenantId(req);
@@ -4055,7 +4492,7 @@ async function startServer() {
     res.json({ users: tenantStaff });
   });
 
-  app.post('/api/staff', (req, res) => {
+  app.post('/api/staff', validatePlanEntitlements('STAFF'), (req, res) => {
     const { name, email, phone, role, branchId } = req.body;
     if (!name || !email || !role) return res.status(400).json({ message: 'Name, email, and role required' });
     const tenantId = getTenantId(req);
@@ -4258,8 +4695,8 @@ async function startServer() {
   });
 
   app.post('/api/subscriptions/upgrade', (req, res) => {
-    const { planId, phone } = req.body;
-    const plan = subscriptionPlansState.find((p) => p.id === planId);
+    const { planId, tier, phone, amountKes } = req.body;
+    const plan = subscriptionPlansState.find((p) => p.id === planId || p.tier === planId || p.tier === tier);
     if (!plan) return res.status(404).json({ success: false, message: 'Subscription plan not found' });
 
     const tenantId = getTenantId(req);
@@ -5397,7 +5834,7 @@ async function startServer() {
   // Serve static / Vite middleware
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: { middlewareMode: true, hmr: false },
       appType: 'spa',
     });
     app.use(vite.middlewares);

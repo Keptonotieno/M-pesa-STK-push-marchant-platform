@@ -2,89 +2,18 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Helper functions
     function isSignedIn() {
       return request.auth != null;
     }
 
-    function userDocExists() {
-      return isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid));
-    }
-
-    function getUserBusinessId() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.businessId;
-    }
-
-    // Ensures user only accesses documents matching their assigned businessId
-    function canAccessDocument() {
-      return request.auth == null || (
-        !userDocExists() ||
-        resource.data.businessId == getUserBusinessId() ||
-        resource.data.businessId == request.auth.uid
-      );
-    }
-
-    function canCreateDocument() {
-      return request.auth == null || (
-        !userDocExists() ||
-        request.resource.data.businessId == getUserBusinessId() ||
-        request.resource.data.businessId == request.auth.uid
-      );
-    }
-
-    // Global fallback for initial app collections
+    // Allow signed-in users full read/write access to application collections
     match /{document=**} {
-      allow read, write: if true;
-    }
-
-    // Tenant Business Profiles
-    match /businesses/{businessId} {
-      allow read, write: if true;
-    }
-
-    // User Profiles
-    match /users/{userId} {
-      allow read, write: if true;
-    }
-
-    // Notifications & Audit Logs
-    match /notifications/{notificationId} {
-      allow read, write: if true;
-    }
-
-    match /auditLogs/{auditLogId} {
-      allow read, write: if true;
-    }
-
-    // Transactions collection - tenant scoped
-    match /transactions/{transactionId} {
-      allow read, delete: if canAccessDocument();
-      allow create: if canCreateDocument();
-      allow update: if canAccessDocument() && canCreateDocument();
-    }
-
-    // Customers collection - tenant scoped
-    match /customers/{customerId} {
-      allow read, delete: if canAccessDocument();
-      allow create: if canCreateDocument();
-      allow update: if canAccessDocument() && canCreateDocument();
-    }
-
-    // Branches collection - tenant scoped
-    match /branches/{branchId} {
-      allow read, delete: if canAccessDocument();
-      allow create: if canCreateDocument();
-      allow update: if canAccessDocument() && canCreateDocument();
-    }
-
-    // Payment Methods collection - tenant scoped
-    match /paymentMethods/{paymentMethodId} {
-      allow read, delete: if canAccessDocument();
-      allow create: if canCreateDocument();
-      allow update: if canAccessDocument() && canCreateDocument();
+      allow read, write: if isSignedIn();
     }
   }
 }
+
+
 
 
 

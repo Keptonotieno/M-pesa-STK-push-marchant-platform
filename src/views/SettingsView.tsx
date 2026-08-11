@@ -12,6 +12,7 @@ import { ScalabilityTab } from '../components/ScalabilityTab';
 import { IntegrationHealthTab } from '../components/IntegrationHealthTab';
 import { AuditLogsManager } from '../components/AuditLogsManager';
 import { GuidedSetupWizardModal } from '../components/GuidedSetupWizardModal';
+import { DarajaIntegrationWizardModal } from '../components/DarajaIntegrationWizardModal';
 import { saveBusinessToFirestore } from '../lib/firestoreService';
 
 interface Props {
@@ -24,6 +25,7 @@ interface Props {
 export const SettingsView: React.FC<Props> = ({ business, auditLogs, onSaveSettings, onUpdateBusiness }) => {
   const [activeTab, setActiveTab] = useState<'DARAJA' | 'RETRY_POLICY' | 'BUSINESS' | 'AUDIT_LOGS' | 'WEBHOOKS' | 'DAILY_EMAIL' | 'SECURITY' | 'SYSTEM_ERRORS' | 'PERFORMANCE' | 'RELIABILITY' | 'TENANT_SECURITY' | 'SCALABILITY' | 'MONITORING'>('DARAJA');
   const [showWizard, setShowWizard] = useState(false);
+  const [showMpesaWizard, setShowMpesaWizard] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [paybill, setPaybill] = useState(business.paybill || '522522');
   const [tillNumber, setTillNumber] = useState(business.tillNumber || '174379');
@@ -258,6 +260,36 @@ export const SettingsView: React.FC<Props> = ({ business, auditLogs, onSaveSetti
 
       {activeTab === 'DARAJA' && (
         <form onSubmit={handleSave} className="space-y-6 max-w-3xl">
+          {/* Owner/Developer Protected Platform M-PESA Initialization Wizard Banner */}
+          <div className="p-5 rounded-3xl bg-slate-900 border border-emerald-500/40 space-y-3 shadow-xl">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <div className="flex items-center gap-2">
+                <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-400">
+                  <ShieldCheck className="w-5 h-5 text-emerald-400" />
+                </div>
+                <div>
+                  <div className="text-xs font-extrabold uppercase tracking-wider text-emerald-400">
+                    Owner / Developer Only
+                  </div>
+                  <h4 className="text-sm font-bold text-white">
+                    Platform M-PESA Integration Initialization Wizard
+                  </h4>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowMpesaWizard(true)}
+                className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold text-xs rounded-xl shadow-lg transition flex items-center gap-1.5 cursor-pointer shrink-0"
+              >
+                <Sparkles className="w-4 h-4 text-slate-950" />
+                <span>Launch Integration Wizard</span>
+              </button>
+            </div>
+            <p className="text-xs text-slate-400 leading-relaxed">
+              Configure Safaricom Daraja credentials, sandbox/production environments, encryption keys, and platform subscription receiving accounts in one secure place.
+            </p>
+          </div>
+
           {isSaved && (
             <div className="p-4 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 text-xs font-bold flex items-center gap-2">
               <CheckCircle className="w-4 h-4" />
@@ -916,6 +948,21 @@ export const SettingsView: React.FC<Props> = ({ business, auditLogs, onSaveSetti
             },
             body: JSON.stringify({ phone, amount }),
           });
+        }}
+      />
+      <DarajaIntegrationWizardModal
+        isOpen={showMpesaWizard}
+        onClose={() => setShowMpesaWizard(false)}
+        branches={[]}
+        onSavePaymentMethod={async (method) => {
+          if (method.shortcodeOrNumber) {
+            setTillNumber(method.shortcodeOrNumber);
+          }
+          if (method.consumerKey) setConsumerKey(method.consumerKey);
+          if (method.consumerSecret) setConsumerSecret(method.consumerSecret);
+          if (method.passkey) setPasskey(method.passkey);
+          if (method.environment) setEnv(method.environment);
+          setShowMpesaWizard(false);
         }}
       />
     </div>

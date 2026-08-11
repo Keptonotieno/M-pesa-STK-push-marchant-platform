@@ -106,6 +106,12 @@ export const CustomersView: React.FC<Props> = ({
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
+  // Batch Selection State
+  const [selectedCustomerIds, setSelectedCustomerIds] = useState<string[]>([]);
+  const [isBatchDeleting, setIsBatchDeleting] = useState(false);
+  const [showBatchDeleteConfirm, setShowBatchDeleteConfirm] = useState(false);
+  const [batchDeleteFeedback, setBatchDeleteFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
   const [newName, setNewName] = useState('');
   const [newPhone, setNewPhone] = useState('');
   const [newEmail, setNewEmail] = useState('');
@@ -134,6 +140,58 @@ export const CustomersView: React.FC<Props> = ({
       c.phone.includes(search) ||
       c.email.toLowerCase().includes(search.toLowerCase())
   );
+
+  const allFilteredSelected =
+    filtered.length > 0 && filtered.every((c) => selectedCustomerIds.includes(c.id));
+
+  const toggleSelectCustomer = (id: string) => {
+    setSelectedCustomerIds((prev) =>
+      prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
+    );
+  };
+
+  const toggleSelectAllFiltered = () => {
+    if (allFilteredSelected) {
+      const filteredIds = new Set(filtered.map((c) => c.id));
+      setSelectedCustomerIds((prev) => prev.filter((id) => !filteredIds.has(id)));
+    } else {
+      const filteredIds = filtered.map((c) => c.id);
+      setSelectedCustomerIds((prev) => Array.from(new Set([...prev, ...filteredIds])));
+    }
+  };
+
+  const handleBatchDelete = async () => {
+    if (selectedCustomerIds.length === 0) return;
+    setIsBatchDeleting(true);
+    setBatchDeleteFeedback(null);
+    try {
+      for (const id of selectedCustomerIds) {
+        deleteCustomerFromFirestore(id).catch(() => {});
+      }
+      const res = await fetch('/api/customers/bulk-delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: selectedCustomerIds }),
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.message);
+
+      setBatchDeleteFeedback({
+        type: 'success',
+        message: `Successfully batch deleted ${data.count || selectedCustomerIds.length} customer record(s)!`,
+      });
+      setSelectedCustomerIds([]);
+      setShowBatchDeleteConfirm(false);
+      onRefreshData();
+    } catch (err: any) {
+      setBatchDeleteFeedback({
+        type: 'error',
+        message: err.message || 'Failed to delete selected customers.',
+      });
+    } finally {
+      setIsBatchDeleting(false);
+    }
+  };
 
   const handleOpenAdd = () => {
     setEditingCustomer(null);
@@ -478,16 +536,85 @@ export const CustomersView: React.FC<Props> = ({
         </div>
       </div>
 
-      <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm flex items-center justify-between">
-        <div className="relative w-full max-w-md">
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search customers by name, phone, email..."
-            className="w-full pl-9 pr-4 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-xs text-slate-900 dark:text-slate-100 outline-none focus:ring-2 focus:ring-emerald-500"
-          />
-          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+      {/* Batch Delete Toast Notification */}
+      {batchDeleteFeedback && (
+        <div
+          className={`p-4 rounded-2xl flex items-center justify-between text-xs font-bold transition ${
+            batchDeleteFeedback.type === 'success'
+              ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30'
+              : 'bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/30'
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            {batchDeleteFeedback.type === 'success' ? (
+              <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-500" />
+            ) : (
+              <XCircle className="w-4 h-4 shrink-0 text-rose-500" />
+            )}
+            <span>{batchDeleteFeedback.message}</span>
+          </div>
+          <button onClick={() => setBatchDeleteFeedback(null)} className="p-1 hover:opacity-80">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
+      {/* Active Customer Bulk Actions Banner */}
+      {selectedCustomerIds.length > 0 && (
+        <div className="p-4 rounded-2xl bg-emerald-600/10 dark:bg-emerald-500/15 border border-emerald-500/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2 duration-200 shadow-md">
+          <div className="flex items-center gap-3">
+            <div className="px-3 py-1.5 rounded-xl bg-emerald-500 text-slate-950 font-black text-xs shadow-sm">
+              {selectedCustomerIds.length} Selected
+            </div>
+            <div>
+              <span className="text-xs font-bold text-slate-900 dark:text-white block">
+                {selectedCustomerIds.length} Customer{selectedCustomerIds.length > 1 ? 's' : ''} Selected
+              </span>
+              <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                Clean up your CRM directory by batch deleting selected customer profiles.
+              </span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+            <button
+              onClick={() => setSelectedCustomerIds([])}
+              className="px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 text-xs font-bold transition"
+            >
+              Clear Selection
+            </button>
+            <button
+              onClick={() => setShowBatchDeleteConfirm(true)}
+              className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-rose-600/20 flex items-center gap-1.5 transition cursor-pointer"
+            >
+              <Trash2 className="w-4 h-4" />
+              <span>Batch Delete ({selectedCustomerIds.length})</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="flex items-center gap-3 w-full max-w-md">
+          <label className="flex items-center gap-2 text-xs font-bold text-slate-600 dark:text-slate-300 cursor-pointer select-none shrink-0">
+            <input
+              type="checkbox"
+              checked={allFilteredSelected}
+              onChange={toggleSelectAllFiltered}
+              className="w-4 h-4 rounded border-slate-300 dark:border-slate-700 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+            />
+            <span>Select All ({filtered.length})</span>
+          </label>
+          <div className="relative w-full">
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search customers by name, phone, email..."
+              className="w-full pl-9 pr-4 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-xs text-slate-900 dark:text-slate-100 outline-none focus:ring-2 focus:ring-emerald-500"
+            />
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+          </div>
         </div>
         <div className="text-xs font-semibold text-slate-500">
           Showing <span className="text-slate-900 dark:text-white font-bold">{filtered.length}</span> Customers
@@ -498,21 +625,33 @@ export const CustomersView: React.FC<Props> = ({
         {filtered.map((c) => (
           <div
             key={c.id}
-            className="p-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col justify-between space-y-4 hover:border-emerald-500/40 transition group"
+            className={`p-5 rounded-3xl bg-white dark:bg-slate-900 border shadow-sm flex flex-col justify-between space-y-4 hover:border-emerald-500/40 transition group ${
+              selectedCustomerIds.includes(c.id)
+                ? 'border-emerald-500 ring-2 ring-emerald-500/20 bg-emerald-500/5'
+                : 'border-slate-200 dark:border-slate-800'
+            }`}
           >
             <div>
               <div className="flex items-center justify-between">
-                <span
-                  className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
-                    c.category === 'VIP'
-                      ? 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30'
-                      : c.category === 'REGULAR'
-                      ? 'bg-indigo-500/20 text-indigo-600 dark:text-indigo-400'
-                      : 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
-                  }`}
-                >
-                  {c.category} CUSTOMER
-                </span>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={selectedCustomerIds.includes(c.id)}
+                    onChange={() => toggleSelectCustomer(c.id)}
+                    className="w-4 h-4 rounded border-slate-300 dark:border-slate-700 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                  />
+                  <span
+                    className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                      c.category === 'VIP'
+                        ? 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30'
+                        : c.category === 'REGULAR'
+                        ? 'bg-indigo-500/20 text-indigo-600 dark:text-indigo-400'
+                        : 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
+                    }`}
+                  >
+                    {c.category} CUSTOMER
+                  </span>
+                </div>
                 <div className="flex items-center gap-1.5">
                   <span className="text-[10px] text-slate-400 font-mono">{c.transactionCount} Txns</span>
                   <button
@@ -1021,6 +1160,45 @@ export const CustomersView: React.FC<Props> = ({
                 className="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs shadow-md"
               >
                 Delete Customer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showBatchDeleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4 animate-in fade-in duration-150">
+          <div className="w-full max-w-md bg-white dark:bg-slate-900 rounded-3xl p-6 shadow-2xl border border-slate-200 dark:border-slate-800 space-y-4">
+            <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              <AlertCircle className="w-5 h-5 text-rose-500" /> Confirm Batch Customer Deletion
+            </h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Are you sure you want to permanently delete <strong>{selectedCustomerIds.length}</strong> selected customer(s)? Their profiles will be removed from your CRM directory.
+            </p>
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                onClick={() => setShowBatchDeleteConfirm(false)}
+                disabled={isBatchDeleting}
+                className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleBatchDelete}
+                disabled={isBatchDeleting}
+                className="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 disabled:opacity-50 text-white font-bold text-xs shadow-md transition flex items-center gap-2 cursor-pointer"
+              >
+                {isBatchDeleting ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Deleting...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Delete {selectedCustomerIds.length} Customers</span>
+                  </>
+                )}
               </button>
             </div>
           </div>

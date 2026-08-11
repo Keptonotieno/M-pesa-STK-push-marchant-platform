@@ -72,6 +72,7 @@ export interface StkRetryPolicy {
 
 export interface Business {
   id: string;
+  ownerId?: string;
   name: string;
   category?: string;
   customCategory?: string;
@@ -89,7 +90,12 @@ export interface Business {
   maxStaff?: number;
   maxTransactions?: number;
   unlockedFeatures?: string[];
-  status: 'ACTIVE' | 'SUSPENDED' | 'PENDING_VERIFICATION';
+  status: 'ACTIVE' | 'SUSPENDED' | 'PENDING_VERIFICATION' | 'INCOMPLETE_ONBOARDING';
+  verificationStatus?: 'VERIFIED' | 'PENDING_VERIFICATION' | 'REJECTED';
+  emailVerified?: boolean;
+  phoneVerified?: boolean;
+  onboardingStep?: number;
+  onboardingCompleted?: boolean;
   createdAt: string;
   address: string;
   kraPin: string;

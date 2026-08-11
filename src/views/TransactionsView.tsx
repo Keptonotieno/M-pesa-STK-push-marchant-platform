@@ -13,8 +13,11 @@ import {
   FileSpreadsheet,
   Calendar,
   X,
+  Trash2,
+  AlertCircle,
 } from 'lucide-react';
 import { Transaction, Branch, TransactionStatus } from '../types';
+import { deleteTransactionFromFirestore } from '../lib/firestoreService';
 
 interface Props {
   transactions: Transaction[];
@@ -38,9 +41,11 @@ export const TransactionsView: React.FC<Props> = ({
   const [endDate, setEndDate] = useState<string>('');
   const [activeTxDetail, setActiveTxDetail] = useState<Transaction | null>(null);
   
-  // Selection state for Bulk Retry
+  // Selection state for Bulk Actions
   const [selectedTxIds, setSelectedTxIds] = useState<string[]>([]);
   const [isRetrying, setIsRetrying] = useState<boolean>(false);
+  const [isDeleting, setIsDeleting] = useState<boolean>(false);
+  const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState<boolean>(false);
   const [feedbackMsg, setFeedbackMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // Filter logic
@@ -82,6 +87,9 @@ export const TransactionsView: React.FC<Props> = ({
   const allFailedSelected =
     failedInFiltered.length > 0 && failedInFiltered.every((t) => selectedTxIds.includes(t.id));
 
+  const allFilteredSelected =
+    filteredTx.length > 0 && filteredTx.every((t) => selectedTxIds.includes(t.id));
+
   const toggleSelectTx = (id: string) => {
     setSelectedTxIds((prev) =>
       prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
@@ -95,6 +103,49 @@ export const TransactionsView: React.FC<Props> = ({
     } else {
       const failedIds = failedInFiltered.map((t) => t.id);
       setSelectedTxIds((prev) => Array.from(new Set([...prev, ...failedIds])));
+    }
+  };
+
+  const toggleSelectAllFiltered = () => {
+    if (allFilteredSelected) {
+      const filteredIds = new Set(filteredTx.map((t) => t.id));
+      setSelectedTxIds((prev) => prev.filter((id) => !filteredIds.has(id)));
+    } else {
+      const filteredIds = filteredTx.map((t) => t.id);
+      setSelectedTxIds((prev) => Array.from(new Set([...prev, ...filteredIds])));
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedTxIds.length === 0) return;
+    setIsDeleting(true);
+    setFeedbackMsg(null);
+    try {
+      for (const id of selectedTxIds) {
+        deleteTransactionFromFirestore(id).catch(() => {});
+      }
+      const res = await fetch('/api/transactions/bulk-delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: selectedTxIds }),
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.message);
+
+      setFeedbackMsg({
+        type: 'success',
+        text: `Successfully batch deleted ${data.count || selectedTxIds.length} transaction record(s)!`,
+      });
+      setSelectedTxIds([]);
+      setShowBulkDeleteConfirm(false);
+      onRefreshData();
+    } catch (err: any) {
+      setFeedbackMsg({
+        type: 'error',
+        text: err.message || 'Failed to batch delete selected transactions.',
+      });
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -381,15 +432,15 @@ export const TransactionsView: React.FC<Props> = ({
             </div>
             <div>
               <span className="text-xs font-bold text-slate-900 dark:text-white block">
-                {selectedTxIds.length} Failed/Cancelled Transaction{selectedTxIds.length > 1 ? 's' : ''} Ready
+                {selectedTxIds.length} Transaction{selectedTxIds.length > 1 ? 's' : ''} Selected
               </span>
               <span className="text-[11px] text-slate-500 dark:text-slate-400">
-                Trigger an instant re-send of the STK Push payment prompt to customer phone numbers.
+                Clean up selected transaction logs or trigger a bulk STK Push retry for failed requests.
               </span>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+          <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-end">
             <button
               onClick={() => setSelectedTxIds([])}
               className="px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 text-xs font-bold transition"
@@ -397,13 +448,25 @@ export const TransactionsView: React.FC<Props> = ({
               Clear
             </button>
             <button
-              onClick={handleBulkRetry}
-              disabled={isRetrying}
-              className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-lg shadow-emerald-600/20 flex items-center gap-2 transition cursor-pointer"
+              onClick={() => setShowBulkDeleteConfirm(true)}
+              className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-rose-600/20 flex items-center gap-1.5 transition cursor-pointer"
             >
-              <RefreshCw className={`w-4 h-4 ${isRetrying ? 'animate-spin' : ''}`} />
-              <span>Bulk Retry STK Push ({selectedTxIds.length})</span>
+              <Trash2 className="w-4 h-4" />
+              <span>Batch Delete ({selectedTxIds.length})</span>
             </button>
+            {selectedTxIds.some((id) => {
+              const tx = transactions.find((t) => t.id === id);
+              return tx && (tx.status === 'FAILED' || tx.status === 'CANCELLED');
+            }) && (
+              <button
+                onClick={handleBulkRetry}
+                disabled={isRetrying}
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-lg shadow-emerald-600/20 flex items-center gap-2 transition cursor-pointer"
+              >
+                <RefreshCw className={`w-4 h-4 ${isRetrying ? 'animate-spin' : ''}`} />
+                <span>Bulk Retry STK Push</span>
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -719,6 +782,45 @@ export const TransactionsView: React.FC<Props> = ({
             >
               Close Metadata
             </button>
+          </div>
+        </div>
+      )}
+
+      {showBulkDeleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4 animate-in fade-in duration-150">
+          <div className="w-full max-w-md bg-white dark:bg-slate-900 rounded-3xl p-6 shadow-2xl border border-slate-200 dark:border-slate-800 space-y-4">
+            <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              <AlertCircle className="w-5 h-5 text-rose-500" /> Confirm Batch Deletion
+            </h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Are you sure you want to permanently delete <strong>{selectedTxIds.length}</strong> selected transaction record(s)? This action cannot be undone.
+            </p>
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                onClick={() => setShowBulkDeleteConfirm(false)}
+                disabled={isDeleting}
+                className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleBulkDelete}
+                disabled={isDeleting}
+                className="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 disabled:opacity-50 text-white font-bold text-xs shadow-md transition flex items-center gap-2 cursor-pointer"
+              >
+                {isDeleting ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Deleting...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Delete {selectedTxIds.length} Transactions</span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}

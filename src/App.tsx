@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
 import { SendPaymentModal } from './components/SendPaymentModal';
+import { AuthModal } from './components/AuthModal';
 import { ErrorBoundary } from './components/ErrorBoundary';
 
 import { LandingPageView } from './views/LandingPageView';
@@ -12,6 +13,7 @@ import { BranchesView } from './views/BranchesView';
 import { StaffView } from './views/StaffView';
 import { ReportsView } from './views/ReportsView';
 import { SubscriptionsView } from './views/SubscriptionsView';
+import { SubscriptionCheckoutView } from './views/SubscriptionCheckoutView';
 import { NotificationsView } from './views/NotificationsView';
 import { SettingsView } from './views/SettingsView';
 import { MonitoringView } from './views/MonitoringView';
@@ -20,6 +22,7 @@ import { HelpView } from './views/HelpView';
 import { ProfileView } from './views/ProfileView';
 import { BusinessesView } from './views/BusinessesView';
 import { PaymentMethodsView } from './views/PaymentMethodsView';
+import { AdminPortalView } from './views/AdminPortalView';
 import { AuthView } from './views/AuthView';
 import { AlertTriangle } from 'lucide-react';
 
@@ -68,10 +71,12 @@ export default function App() {
   const [analytics, setAnalytics] = useState<AnalyticsSummary | null>(null);
 
   const [activeView, setActiveView] = useState<string>('dashboard');
+  const [checkoutPlanId, setCheckoutPlanId] = useState<string>('plan-growth');
   const [activeBranchId, setActiveBranchId] = useState<string>('ALL');
   const [autoRefreshEnabled, setAutoRefreshEnabled] = useState<boolean>(true);
 
   const [isSendModalOpen, setIsSendModalOpen] = useState(false);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [darkMode, setDarkMode] = useState(true);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
 
@@ -374,13 +379,26 @@ export default function App() {
     }
   };
 
-  if (!currentUser || !business) {
+  const isVerifiedBusiness =
+    currentUser &&
+    business &&
+    business.status === 'ACTIVE' &&
+    (business.verificationStatus === 'VERIFIED' || business.onboardingCompleted !== false);
+
+  if (!currentUser || !business || !isVerifiedBusiness) {
     return (
       <div className={darkMode ? 'dark' : ''}>
         <AuthView
+          initialUser={currentUser}
+          initialBusiness={business}
           onLoginSuccess={(u, b) => {
             setCurrentUser(u);
             setBusiness(b);
+            if (u.role === 'SUPER_ADMIN' || u.email.toLowerCase() === 'keptonotieno@gmail.com') {
+              setActiveView('admin_portal');
+            } else {
+              setActiveView('dashboard');
+            }
             fetchData(b.id);
           }}
         />
@@ -448,6 +466,7 @@ export default function App() {
           onToggleDarkMode={() => setDarkMode(!darkMode)}
           onNavigate={setActiveView}
           onSignOut={handleSignOut}
+          onOpenAuthModal={() => setIsAuthModalOpen(true)}
           transactions={transactions}
           onToggleMobileMenu={() => setIsMobileSidebarOpen(!isMobileSidebarOpen)}
         />
@@ -552,6 +571,7 @@ export default function App() {
           {activeView === 'branches' && (
             <BranchesView
               branches={branches}
+              currentBusiness={business || undefined}
               onAddBranch={async (b) => {
                 await fetch('/api/branches', {
                   method: 'POST',
@@ -560,6 +580,10 @@ export default function App() {
                 });
                 fetchData();
               }}
+              onNavigateToCheckout={(planId) => {
+                if (planId) setCheckoutPlanId(planId);
+                setActiveView('checkout-subscription');
+              }}
             />
           )}
 
@@ -567,6 +591,7 @@ export default function App() {
             <StaffView
               users={staffUsers.length > 0 ? staffUsers : [currentUser]}
               branches={branches}
+              currentBusiness={business || undefined}
               onInviteStaff={async (u) => {
                 await fetch('/api/staff', {
                   method: 'POST',
@@ -583,6 +608,10 @@ export default function App() {
                 });
                 fetchData();
               }}
+              onNavigateToCheckout={(planId) => {
+                if (planId) setCheckoutPlanId(planId);
+                setActiveView('checkout-subscription');
+              }}
             />
           )}
 
@@ -593,6 +622,21 @@ export default function App() {
               currentBusiness={business}
               onUpgradePlan={(planId, phone) => {
                 handleUpgradePlan(planId, phone);
+              }}
+              onNavigateToCheckout={(planId) => {
+                if (planId) setCheckoutPlanId(planId);
+                setActiveView('checkout-subscription');
+              }}
+            />
+          )}
+
+          {activeView === 'checkout-subscription' && (
+            <SubscriptionCheckoutView
+              currentBusiness={business!}
+              selectedPlanId={checkoutPlanId}
+              onBack={() => setActiveView('subscriptions')}
+              onPaymentSuccess={() => {
+                fetchData();
               }}
             />
           )}
@@ -644,6 +688,15 @@ export default function App() {
               onSwitchTenant={handleSwitchTenant}
             />
           )}
+
+          {activeView === 'admin_portal' && currentUser && (
+            <AdminPortalView
+              currentUser={currentUser}
+              currentBusiness={business!}
+              onSwitchTenant={handleSwitchTenant}
+              onRefreshData={() => fetchData(business?.id, activeBranchId)}
+            />
+          )}
           </ErrorBoundary>
         </main>
       </div>
@@ -656,6 +709,20 @@ export default function App() {
         customers={customers}
         paymentMethods={paymentMethods}
         onStkPushSent={handleStkPushSent}
+      />
+
+      <AuthModal
+        isOpen={isAuthModalOpen}
+        onClose={() => setIsAuthModalOpen(false)}
+        onAuthSuccess={(u, b) => {
+          if (u.id) {
+            setCurrentUser((prev) => (prev ? { ...prev, ...u } : (u as User)));
+          }
+          if (b && b.id) {
+            setBusiness((prev) => (prev ? { ...prev, ...b } : (b as Business)));
+          }
+          fetchData();
+        }}
       />
     </div>
   );

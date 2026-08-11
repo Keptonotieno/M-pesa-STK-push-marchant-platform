@@ -26,18 +26,36 @@ import {
   RotateCcw,
 } from 'lucide-react';
 import { Business, SubscriptionPlan, SubscriptionInvoice } from '../types';
+import { subscriptionPlans } from '../data/mockData';
 
 interface Props {
-  currentBusiness: Business;
+  currentBusiness?: Business | null;
   onUpgradePlan: (planId: string, phone: string) => void;
+  onNavigateToCheckout?: (planId: string) => void;
 }
 
-export const SubscriptionsView: React.FC<Props> = ({ currentBusiness, onUpgradePlan }) => {
+const defaultFallbackBiz: Business = {
+  id: 'biz-001',
+  name: 'Merchant HQ',
+  category: 'Retail & Supermarket',
+  customCategory: '',
+  kraPin: 'P051234567Z',
+  contactEmail: 'admin@pesarequest.co.ke',
+  contactPhone: '0700830335',
+  subscriptionTier: 'GROWTH',
+  subscriptionStatus: 'ACTIVE',
+  subscriptionRenewalDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+  status: 'ACTIVE',
+  address: 'Nairobi HQ',
+  createdAt: new Date().toISOString(),
+};
+
+export const SubscriptionsView: React.FC<Props> = ({ currentBusiness, onUpgradePlan, onNavigateToCheckout }) => {
   const [activeTab, setActiveTab] = useState<'PLANS' | 'INVOICES'>('PLANS');
-  const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
+  const [plans, setPlans] = useState<SubscriptionPlan[]>(subscriptionPlans);
   const [invoices, setInvoices] = useState<SubscriptionInvoice[]>([]);
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
-  const [payPhone, setPayPhone] = useState(currentBusiness.contactPhone || '0700830335');
+  const [payPhone, setPayPhone] = useState(currentBusiness?.contactPhone || '0700830335');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [stkPromptPending, setStkPromptPending] = useState<{
     checkoutRequestId: string;
@@ -63,22 +81,28 @@ export const SubscriptionsView: React.FC<Props> = ({ currentBusiness, onUpgradeP
     maxTransactions: number;
   } | null>(null);
 
-  const [businessData, setBusinessData] = useState<Business>(currentBusiness);
+  const [businessData, setBusinessData] = useState<Business>(currentBusiness || defaultFallbackBiz);
 
   // Sync prop changes
   useEffect(() => {
-    setBusinessData(currentBusiness);
+    if (currentBusiness) {
+      setBusinessData(currentBusiness);
+      if (currentBusiness.contactPhone) {
+        setPayPhone(currentBusiness.contactPhone);
+      }
+    }
   }, [currentBusiness]);
 
   const fetchSubscriptionInfo = async () => {
+    const targetBizId = businessData?.id || currentBusiness?.id || 'biz-001';
     try {
       const res = await fetch('/api/subscriptions/plans', {
-        headers: { 'x-business-id': businessData.id },
+        headers: { 'x-business-id': targetBizId },
       });
       const data = await res.json();
-      if (data.success) {
-        if (data.plans) setPlans(data.plans);
-        if (data.invoices) setInvoices(data.invoices);
+      if (data && data.success) {
+        if (Array.isArray(data.plans) && data.plans.length > 0) setPlans(data.plans);
+        if (Array.isArray(data.invoices)) setInvoices(data.invoices);
         if (data.usage) setUsage(data.usage);
         if (data.currentBusiness) setBusinessData(data.currentBusiness);
       }
@@ -89,7 +113,7 @@ export const SubscriptionsView: React.FC<Props> = ({ currentBusiness, onUpgradeP
 
   useEffect(() => {
     fetchSubscriptionInfo();
-  }, [businessData.id, businessData.subscriptionTier, businessData.subscriptionStatus]);
+  }, [businessData?.id, businessData?.subscriptionTier, businessData?.subscriptionStatus]);
 
   // Live polling for STK Push subscription verification
   useEffect(() => {
@@ -124,7 +148,11 @@ export const SubscriptionsView: React.FC<Props> = ({ currentBusiness, onUpgradeP
 
   const handleTriggerPlanChange = (plan: SubscriptionPlan) => {
     if (plan.tier === businessData.subscriptionTier && businessData.subscriptionStatus === 'ACTIVE') return;
-    setSelectedPlanId(plan.id);
+    if (onNavigateToCheckout) {
+      onNavigateToCheckout(plan.id);
+    } else {
+      setSelectedPlanId(plan.id);
+    }
   };
 
   const handleConfirmPaySubmit = async (e: React.FormEvent) => {
@@ -294,23 +322,20 @@ export const SubscriptionsView: React.FC<Props> = ({ currentBusiness, onUpgradeP
     }
   };
 
+  const currentTierTarget = businessData?.subscriptionTier || 'GROWTH';
   const activePlanObj =
-    plans.find((p) => p.tier === businessData.subscriptionTier) ||
-    plans[0] || {
-      id: 'plan-starter',
-      name: 'Basic Merchant',
-      tier: 'STARTER',
-      priceKes: 1500,
-      period: 'MONTHLY',
-      maxTransactions: 500,
-      maxBranches: 2,
-      maxStaff: 5,
-      features: ['500 STK Pushes/mo', '2 Branches included', '5 Staff Accounts'],
-    };
+    plans.find((p) => p && p.tier === currentTierTarget) ||
+    plans[1] ||
+    plans[0] ||
+    subscriptionPlans[1] ||
+    subscriptionPlans[0];
 
-  const selectedPlanObj = plans.find((p) => p.id === selectedPlanId);
+  const selectedPlanObj =
+    plans.find((p) => p && (p.id === selectedPlanId || p.tier === selectedPlanId)) ||
+    subscriptionPlans.find((p) => p && (p.id === selectedPlanId || p.tier === selectedPlanId)) ||
+    activePlanObj;
 
-  const renewalDateStr = businessData.subscriptionRenewalDate
+  const renewalDateStr = businessData?.subscriptionRenewalDate
     ? new Date(businessData.subscriptionRenewalDate).toLocaleDateString('en-GB', {
         day: 'numeric',
         month: 'short',

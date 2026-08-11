@@ -1,16 +1,26 @@
 import React, { useState } from 'react';
 import { GitBranch, Plus, Store, Phone, MapPin, User, CheckCircle, Shield, Edit2, Trash2, AlertCircle, X } from 'lucide-react';
-import { Branch } from '../types';
+import { Branch, Business } from '../types';
 import { saveBranchToFirestore } from '../lib/firestoreService';
+import { UpgradeRequiredModal } from '../components/UpgradeRequiredModal';
 
 interface Props {
   branches: Branch[];
+  currentBusiness?: Business;
   onAddBranch: (branch: Partial<Branch>) => void;
   onRefreshData?: () => void;
+  onNavigateToCheckout?: (planId?: string) => void;
 }
 
-export const BranchesView: React.FC<Props> = ({ branches, onAddBranch, onRefreshData }) => {
+export const BranchesView: React.FC<Props> = ({
+  branches,
+  currentBusiness,
+  onAddBranch,
+  onRefreshData,
+  onNavigateToCheckout,
+}) => {
   const [showModal, setShowModal] = useState(false);
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [editingBranch, setEditingBranch] = useState<Branch | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
@@ -21,7 +31,14 @@ export const BranchesView: React.FC<Props> = ({ branches, onAddBranch, onRefresh
   const [tillNumber, setTillNumber] = useState('');
   const [status, setStatus] = useState<'ACTIVE' | 'INACTIVE'>('ACTIVE');
 
+  const maxBranches = currentBusiness?.maxBranches || 2;
+
   const handleOpenAdd = () => {
+    // Check branch quota limit
+    if (branches.length >= maxBranches && maxBranches !== 0) {
+      setShowUpgradeModal(true);
+      return;
+    }
     setEditingBranch(null);
     setName('');
     setLocation('');
@@ -296,6 +313,20 @@ export const BranchesView: React.FC<Props> = ({ branches, onAddBranch, onRefresh
           </div>
         </div>
       )}
+
+      <UpgradeRequiredModal
+        isOpen={showUpgradeModal}
+        onClose={() => setShowUpgradeModal(false)}
+        onUpgradeClick={(targetPlanId) => {
+          if (onNavigateToCheckout) onNavigateToCheckout(targetPlanId);
+        }}
+        title="Branch Limit Reached"
+        message={`Your current ${currentBusiness?.subscriptionTier || 'STARTER'} plan permits up to ${maxBranches} active store branches (${branches.length}/${maxBranches} created). Upgrade your plan to add additional branches.`}
+        currentTier={currentBusiness?.subscriptionTier || 'STARTER'}
+        limitType="BRANCHES"
+        currentUsage={branches.length}
+        maxLimit={maxBranches}
+      />
     </div>
   );
 };

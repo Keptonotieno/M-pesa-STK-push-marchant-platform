@@ -130,6 +130,14 @@ export async function saveTransactionToFirestore(tx: Transaction) {
   }
 }
 
+export async function deleteTransactionFromFirestore(transactionId: string) {
+  try {
+    await deleteDoc(doc(db, 'transactions', transactionId));
+  } catch (err) {
+    handleFirestoreError(err, OperationType.DELETE, `transactions/${transactionId}`);
+  }
+}
+
 export async function saveCustomerToFirestore(customer: Customer) {
   try {
     await setDoc(doc(db, 'customers', customer.id), cleanForFirestore(customer), { merge: true });

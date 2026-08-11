@@ -34,6 +34,7 @@ interface Props {
   onToggleDarkMode: () => void;
   onNavigate: (view: string) => void;
   onSignOut?: () => void;
+  onOpenAuthModal?: () => void;
   transactions?: Transaction[];
   onToggleMobileMenu?: () => void;
 }
@@ -84,6 +85,7 @@ export const Header: React.FC<Props> = ({
   onToggleDarkMode,
   onNavigate,
   onSignOut,
+  onOpenAuthModal,
   transactions = [],
   onToggleMobileMenu,
 }) => {
@@ -279,11 +281,40 @@ export const Header: React.FC<Props> = ({
 
         {/* Right Action Controls */}
         <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
+          {/* Super Admin Console Button */}
+          {(currentUser.role === 'SUPER_ADMIN' || currentUser.email === 'keptonotieno@gmail.com') && (
+            <button
+              onClick={() => onNavigate('admin_portal')}
+              className="px-3 py-1.5 rounded-xl bg-purple-500/20 hover:bg-purple-500/30 text-purple-600 dark:text-purple-300 border border-purple-500/40 text-xs font-black transition flex items-center gap-1.5 cursor-pointer shadow-sm shrink-0"
+              title="Access Platform Super Admin Console"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-purple-500" />
+              <span>Admin Portal</span>
+            </button>
+          )}
+
           {/* Tenant Business Name Indicator */}
           <div className="hidden xl:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-xs text-slate-600 dark:text-slate-300">
             <Building className="w-3.5 h-3.5 text-emerald-500" />
             <span className="font-bold truncate max-w-[120px]">{currentBusiness.name}</span>
           </div>
+
+          {/* Subscription Tier Badge */}
+          <button
+            onClick={() => onNavigate('subscriptions')}
+            className={`hidden md:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold border transition cursor-pointer ${
+              currentBusiness.subscriptionStatus === 'EXPIRED'
+                ? 'bg-rose-500/10 border-rose-500/30 text-rose-600 dark:text-rose-400'
+                : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20'
+            }`}
+            title="View Subscription & Plan Details"
+          >
+            <Sparkles className="w-3.5 h-3.5 shrink-0 text-emerald-500" />
+            <span>{currentBusiness.subscriptionTier || 'STARTER'} TIER</span>
+            {currentBusiness.subscriptionStatus === 'EXPIRED' && (
+              <span className="px-1.5 py-0.2 rounded bg-rose-500 text-white font-black text-[9px]">EXPIRED</span>
+            )}
+          </button>
 
           {/* User Role Badge */}
           <div className="hidden sm:flex px-2.5 py-1.5 rounded-xl glass-card text-xs font-semibold text-slate-700 dark:text-slate-200 items-center gap-1.5">
@@ -456,6 +487,18 @@ export const Header: React.FC<Props> = ({
                   >
                     Daraja & Webhook Settings
                   </button>
+                  {onOpenAuthModal && (
+                    <button
+                      onClick={() => {
+                        onOpenAuthModal();
+                        setShowUserDropdown(false);
+                      }}
+                      className="w-full text-left px-3 py-2 text-xs text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10 rounded-xl font-bold cursor-pointer min-h-[40px] flex items-center gap-2"
+                    >
+                      <Sparkles className="w-3.5 h-3.5" />
+                      Firebase Auth & Config Diagnostics
+                    </button>
+                  )}
                 </div>
 
                 {/* Role QA / Testing Selector */}

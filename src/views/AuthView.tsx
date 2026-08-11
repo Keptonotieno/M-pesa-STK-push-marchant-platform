@@ -10,6 +10,7 @@ import {
   RefreshCw,
   AlertCircle,
   Tag,
+  CheckCircle,
   CheckCircle2,
   MapPin,
   CreditCard,
@@ -23,9 +24,10 @@ import {
   Award,
   Clock,
   RotateCcw,
+  Crown,
 } from 'lucide-react';
 import { User as UserType, Business, BUSINESS_CATEGORIES, PaymentMethodConfig, SubscriptionPlan } from '../types';
-import { loginWithGoogle, loginWithEmail, registerWithEmail, resetPassword, auth } from '../lib/firebase';
+import { loginWithGoogle, loginWithEmail, registerWithEmail, resetPassword, auth, parseAuthError } from '../lib/firebase';
 import { sendEmailVerification } from 'firebase/auth';
 import {
   saveBusinessToFirestore,
@@ -38,13 +40,19 @@ import {
 
 interface Props {
   onLoginSuccess: (user: UserType, business: Business) => void;
+  initialUser?: UserType | null;
+  initialBusiness?: Business | null;
 }
 
 const DRAFT_STORAGE_KEY = 'pesarequest_onboarding_draft';
 
-export const AuthView: React.FC<Props> = ({ onLoginSuccess }) => {
-  // Mode: 'LOGIN' | 'REGISTER' | 'RESET_PASSWORD' | 'LOGIN_VERIFY_OTP' | 'EMAIL_VERIFICATION'
-  const [mode, setMode] = useState<'LOGIN' | 'REGISTER' | 'RESET_PASSWORD' | 'LOGIN_VERIFY_OTP' | 'EMAIL_VERIFICATION'>('LOGIN');
+export const AuthView: React.FC<Props> = ({ onLoginSuccess, initialUser, initialBusiness }) => {
+  // Mode: 'LOGIN' | 'REGISTER' | 'RESET_PASSWORD' | 'LOGIN_VERIFY_OTP' | 'EMAIL_VERIFICATION' | 'ADMIN_LOGIN'
+  const [mode, setMode] = useState<'LOGIN' | 'REGISTER' | 'RESET_PASSWORD' | 'LOGIN_VERIFY_OTP' | 'EMAIL_VERIFICATION' | 'ADMIN_LOGIN'>('LOGIN');
+
+  // Super Admin Login Form Fields
+  const [adminEmail, setAdminEmail] = useState('keptonotieno@gmail.com');
+  const [adminPassword, setAdminPassword] = useState('');
 
   // Pending authentication state for email OTP verification
   const [pendingUser, setPendingUser] = useState<UserType | null>(null);
@@ -122,6 +130,21 @@ export const AuthView: React.FC<Props> = ({ onLoginSuccess }) => {
   const [paybillNumber, setPaybillNumber] = useState('');
   const [accountNumber, setAccountNumber] = useState('');
 
+  // Step 4 Subscription STK Push Checkout State
+  const [subPaymentPhone, setSubPaymentPhone] = useState('');
+  const [stkCheckoutReqId, setStkCheckoutReqId] = useState<string | null>(null);
+  const [subPaymentStatus, setSubPaymentStatus] = useState<'IDLE' | 'PENDING' | 'SUCCESS' | 'FAILED'>('IDLE');
+  const [subPaymentReceipt, setSubPaymentReceipt] = useState('');
+  const [isInitiatingStkPush, setIsInitiatingStkPush] = useState(false);
+  const [isSimulatingSubPin, setIsSimulatingSubPin] = useState(false);
+
+  // Pre-fill subscription payment phone number from registered phone
+  useEffect(() => {
+    if (!subPaymentPhone && phone) {
+      setSubPaymentPhone(phone);
+    }
+  }, [phone, subPaymentPhone]);
+
   // Automated Merchant Verification Workflow State
   const [isVerifyingMerchant, setIsVerifyingMerchant] = useState(false);
   const [verificationProgress, setVerificationProgress] = useState(0);
@@ -151,6 +174,27 @@ export const AuthView: React.FC<Props> = ({ onLoginSuccess }) => {
       console.warn('Failed to parse saved onboarding draft');
     }
   }, []);
+
+  // Auto-resume incomplete onboarding step if redirected from unverified business access
+  useEffect(() => {
+    if (initialBusiness && (initialBusiness.status === 'PENDING_VERIFICATION' || initialBusiness.onboardingCompleted === false)) {
+      setPendingBusiness(initialBusiness);
+      setCreatedBusiness(initialBusiness);
+      if (initialUser) {
+        setPendingUser(initialUser);
+        setCreatedUser(initialUser);
+      }
+      setMode('REGISTER');
+      setRegisterStep(initialBusiness.onboardingStep || 2);
+      if (initialBusiness.contactEmail) setEmail(initialBusiness.contactEmail);
+      if (initialBusiness.contactPhone) setPhone(initialBusiness.contactPhone);
+      if (initialBusiness.name) setBusinessName(initialBusiness.name);
+      if (initialBusiness.kraPin) setKraPin(initialBusiness.kraPin);
+      if (initialBusiness.emailVerified) setEmailVerified(true);
+      if (initialBusiness.phoneVerified) setPhoneVerified(true);
+      setErrorMsg(`Action Required: Business onboarding for "${initialBusiness.name}" is incomplete. Please complete Step ${initialBusiness.onboardingStep || 2} to activate dashboard access.`);
+    }
+  }, [initialBusiness, initialUser]);
 
   // Save current step & fields to localStorage draft
   const saveDraftToStorage = (updatedFields?: Record<string, any>) => {
@@ -357,7 +401,8 @@ export const AuthView: React.FC<Props> = ({ onLoginSuccess }) => {
       }
     } catch (err: any) {
       console.error('Firebase Auth Google Sign-In error:', err);
-      setErrorMsg(err?.message || 'Firebase Auth Sign-In failed.');
+      const parsed = parseAuthError(err);
+      setErrorMsg(`${parsed.title}: ${parsed.message}${parsed.actionHint ? ` (${parsed.actionHint})` : ''}`);
     } finally {
       setIsSubmitting(false);
     }
@@ -497,6 +542,13 @@ export const AuthView: React.FC<Props> = ({ onLoginSuccess }) => {
         if (data.success && data.user) {
           const finalUser = user || data.user;
           const finalBiz = business || data.business;
+
+          if (finalUser.role === 'SUPER_ADMIN' || data.isSuperAdmin || finalUser.email.toLowerCase() === 'keptonotieno@gmail.com') {
+            clearDraftStorage();
+            onLoginSuccess(finalUser, finalBiz);
+            return;
+          }
+
           setPendingUser(finalUser);
           setPendingBusiness(finalBiz);
           setEmail(finalUser.email);
@@ -518,14 +570,8 @@ export const AuthView: React.FC<Props> = ({ onLoginSuccess }) => {
       }
 
       if (fbError) {
-        const code = fbError?.code || '';
-        if (code === 'auth/invalid-credential' || code === 'auth/wrong-password' || code === 'auth/user-not-found') {
-          setErrorMsg('Invalid email or password. Please check your credentials or register a new business.');
-        } else if (code === 'auth/user-disabled') {
-          setErrorMsg('This merchant account has been disabled. Please contact PesaRequest support.');
-        } else {
-          setErrorMsg(fbError?.message || 'Sign in failed. Please verify your credentials.');
-        }
+        const parsed = parseAuthError(fbError);
+        setErrorMsg(`${parsed.title}: ${parsed.message}${parsed.actionHint ? ` (${parsed.actionHint})` : ''}`);
       } else {
         setErrorMsg('Invalid credentials or merchant profile not found.');
       }
@@ -536,37 +582,82 @@ export const AuthView: React.FC<Props> = ({ onLoginSuccess }) => {
     }
   };
 
+  // Super Admin Dedicated Login Handler
+  const handleAdminLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!adminEmail || !adminPassword) {
+      setErrorMsg('Please enter both Super Admin email and password.');
+      return;
+    }
+
+    setIsSubmitting(true);
+    setErrorMsg('');
+    setSuccessMsg('');
+
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: adminEmail.trim(), password: adminPassword }),
+      });
+      const data = await res.json();
+
+      if (res.ok && data.success && data.user) {
+        setSuccessMsg('🎉 Super Admin Authenticated! Opening Admin Portal...');
+        clearDraftStorage();
+        setTimeout(() => {
+          onLoginSuccess(data.user, data.business);
+        }, 500);
+      } else {
+        setErrorMsg(data.message || 'Invalid Super Admin credentials. Please check password.');
+      }
+    } catch (err: any) {
+      setErrorMsg('Network error while authenticating Super Admin.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   // Step 1 Registration Details Handler with Real-Time Validation & Duplicate Check
   const handleRegisterStep1 = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!businessName || !fullName || !email || !password || !phone) {
-      setErrorMsg('Please fill in all required fields marked with *');
+    setErrorMsg('');
+
+    const missingFields: string[] = [];
+    if (!businessName.trim()) missingFields.push('Business Name');
+    if (!fullName.trim()) missingFields.push('Owner Full Name');
+    if (!email.trim()) missingFields.push('Email Address');
+    if (!phone.trim()) missingFields.push('M-PESA Phone Number');
+    if (!password) missingFields.push('Password');
+    if (!location.trim()) missingFields.push('Business Location');
+
+    if (missingFields.length > 0) {
+      setErrorMsg(`[Step 1 Details -> Missing Input] Please fill in required field(s): ${missingFields.join(', ')}.`);
       return;
     }
 
     if (!isValidEmail(email)) {
-      setErrorMsg('Please enter a valid email address (e.g. owner@business.co.ke).');
+      setErrorMsg(`[Step 1 Form -> Email Address] Invalid format (${email}). Please enter a valid email address (e.g. owner@business.co.ke).`);
       return;
     }
 
     if (!isValidKenyanPhone(phone)) {
-      setErrorMsg('Please enter a valid Kenyan M-PESA phone number (e.g. 0712345678 or 254712345678).');
+      setErrorMsg(`[Step 1 Form -> M-PESA Phone Number] Invalid format (${phone}). Please enter a valid 10-digit Kenyan phone number (e.g. 0712345678 or +254712345678).`);
       return;
     }
 
     if (password.length < 6) {
-      setErrorMsg('Password must be at least 6 characters.');
+      setErrorMsg(`[Step 1 Form -> Password] Password is too short (${password.length} chars). Minimum 6 characters required.`);
       return;
     }
 
     if (kraPin && !isValidKraPin(kraPin)) {
-      setErrorMsg('Invalid KRA PIN format. Must start with P, A, or C followed by 9 digits and end with a letter (e.g. P051928374Z).');
+      setErrorMsg(`[Step 1 Form -> KRA PIN Number] Invalid Tax PIN format (${kraPin}). Must be 11 characters starting with P, A, or C followed by 9 digits and ending with a letter (e.g. P051947563A).`);
       return;
     }
 
     const formattedPhone = normalizeKenyanPhone(phone);
     setIsSubmitting(true);
-    setErrorMsg('');
 
     try {
       // 1. Check email & phone availability against backend
@@ -577,7 +668,8 @@ export const AuthView: React.FC<Props> = ({ onLoginSuccess }) => {
       });
       const checkData = await checkRes.json();
       if (checkData && checkData.available === false) {
-        setErrorMsg(checkData.message || 'An account with these details already exists.');
+        const fieldName = checkData.field === 'email' ? 'Email Address' : checkData.field === 'phone' ? 'M-PESA Phone Number' : 'Account Details';
+        setErrorMsg(`[Step 1 Conflict -> ${fieldName}] ${checkData.message || 'An account with these details already exists. Please sign in instead.'}`);
         setIsSubmitting(false);
         return;
       }
@@ -588,14 +680,14 @@ export const AuthView: React.FC<Props> = ({ onLoginSuccess }) => {
         credential = await registerWithEmail(email, password);
       } catch (fbErr: any) {
         if (fbErr?.code === 'auth/email-already-in-use') {
-          setErrorMsg('An account with this email address already exists in Firebase. Please sign in.');
+          setErrorMsg(`[Firebase Auth -> Email Address] The email address ${email} is already registered in Firebase. Please sign in instead.`);
           setIsSubmitting(false);
           return;
         }
         console.warn('Firebase Auth registration warning, falling back to local tenant creation:', fbErr);
       }
 
-      const uid = credential?.user?.uid || 'usr-reg-' + Date.now();
+      const uid = credential?.user?.uid || auth.currentUser?.uid || 'usr-reg-' + Date.now();
       const newBizId = 'biz-' + Date.now();
       const finalTill = '174' + Math.floor(100 + Math.random() * 900);
       const cleanKraPin = (kraPin || 'P051' + Math.floor(1000000 + Math.random() * 9000000) + 'Z').toUpperCase().trim();
@@ -603,6 +695,7 @@ export const AuthView: React.FC<Props> = ({ onLoginSuccess }) => {
       // Create Business Record in PENDING_VERIFICATION state
       const newBiz: Business = {
         id: newBizId,
+        ownerId: uid,
         name: businessName,
         category: category === 'Other / Custom' && customCategory ? customCategory : category,
         customCategory: customCategory || '',
@@ -650,9 +743,16 @@ export const AuthView: React.FC<Props> = ({ onLoginSuccess }) => {
         transactionCount: 0,
       };
 
-      await saveBusinessToFirestore(newBiz);
-      await saveUserToFirestore(newUser);
-      await saveBranchToFirestore(newBranch);
+      try {
+        await saveBusinessToFirestore(newBiz);
+        await saveUserToFirestore(newUser);
+        await saveBranchToFirestore(newBranch);
+      } catch (fsErr: any) {
+        console.error('Firestore save error in registration:', fsErr);
+        setErrorMsg(`[Firestore DB -> Tenant Save] Database operation failed: ${fsErr?.message || 'Access denied'}`);
+        setIsSubmitting(false);
+        return;
+      }
 
       await fetch('/api/auth/register', {
         method: 'POST',
@@ -691,7 +791,8 @@ export const AuthView: React.FC<Props> = ({ onLoginSuccess }) => {
       setSuccessMsg(`Business details saved! Complete Phone and Email OTP verification to proceed.`);
     } catch (err: any) {
       console.error('Registration Step 1 error:', err);
-      setErrorMsg('Failed to process registration step. Please check your inputs.');
+      const cause = err?.message || err?.toString() || 'Unknown processing error';
+      setErrorMsg(`[Step 1 Details -> Registration Failure] Reason: ${cause}. Please verify inputs or network connection.`);
     } finally {
       setIsSubmitting(false);
     }
@@ -703,15 +804,21 @@ export const AuthView: React.FC<Props> = ({ onLoginSuccess }) => {
       setErrorMsg(`Please wait ${phoneCooldown}s before requesting a new SMS OTP.`);
       return;
     }
+    const targetPhone = normalizeKenyanPhone(phone || createdUser?.phone || createdBusiness?.contactPhone || '');
+    if (!targetPhone) {
+      setErrorMsg('[Step 2 Phone OTP] Phone number is required. Please check your details in Step 1.');
+      return;
+    }
+    const targetEmail = (email || createdUser?.email || createdBusiness?.contactEmail || '').toLowerCase().trim();
+
     setIsSendingPhoneOtp(true);
     setErrorMsg('');
     setSuccessMsg('');
     try {
-      const formattedPhone = normalizeKenyanPhone(phone);
       const res = await fetch('/api/auth/send-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ target: formattedPhone, type: 'PHONE', recipientEmail: email }),
+        body: JSON.stringify({ target: targetPhone, type: 'PHONE', recipientEmail: targetEmail }),
       });
       const data = await res.json();
       if (res.ok && data.success) {
@@ -719,50 +826,57 @@ export const AuthView: React.FC<Props> = ({ onLoginSuccess }) => {
         setPhoneCooldown(60);
         if (data.resendStatus === 'SENT') {
           setPhoneOtp(data.demoCode || '');
-          setSuccessMsg(`OTP sent via Resend Email to ${email} (for ${formattedPhone})! Code: ${data.demoCode}`);
+          setSuccessMsg(`OTP sent via Resend Email to ${targetEmail} (for ${targetPhone})! Code: ${data.demoCode}`);
         } else if (data.demoCode) {
           setPhoneOtp(data.demoCode);
-          setSuccessMsg(`M-PESA Phone SMS OTP sent to ${formattedPhone}! Code: ${data.demoCode}`);
+          setSuccessMsg(`M-PESA Phone SMS OTP sent to ${targetPhone}! Code: ${data.demoCode}`);
         } else {
-          setSuccessMsg(`M-PESA Phone SMS OTP dispatched to ${formattedPhone}!`);
+          setSuccessMsg(`M-PESA Phone SMS OTP dispatched to ${targetPhone}!`);
         }
       } else {
         if (data.cooldownRemainingSeconds) {
           setPhoneCooldown(data.cooldownRemainingSeconds);
         }
-        setErrorMsg(data.message || 'Failed to send Phone OTP');
+        setErrorMsg(`[Step 2 Phone OTP] ${data.message || 'Failed to send Phone OTP'}`);
       }
-    } catch (err) {
-      setErrorMsg('Network error while requesting Phone OTP.');
+    } catch (err: any) {
+      console.error('Send Phone OTP error:', err);
+      setErrorMsg(`[Step 2 Phone OTP] Dispatch failed: ${err?.message || 'Server connection error'}. Please try again.`);
     } finally {
       setIsSendingPhoneOtp(false);
     }
   };
 
   const handleVerifyPhoneOtp = async () => {
+    const targetPhone = normalizeKenyanPhone(phone || createdUser?.phone || createdBusiness?.contactPhone || '');
     if (!phoneOtp) {
-      setErrorMsg('Please enter the 6-digit Phone OTP code.');
+      setErrorMsg('[Step 2 Phone OTP] Please enter the 6-digit Phone OTP code.');
       return;
     }
     setIsVerifyingPhoneOtp(true);
     setErrorMsg('');
     try {
-      const formattedPhone = normalizeKenyanPhone(phone);
       const res = await fetch('/api/auth/verify-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ target: formattedPhone, code: phoneOtp }),
+        body: JSON.stringify({ target: targetPhone, code: phoneOtp }),
       });
       const data = await res.json();
       if (res.ok && data.success) {
         setPhoneVerified(true);
         saveDraftToStorage({ phoneVerified: true });
-        setSuccessMsg('M-PESA Phone Number Verified Successfully! ✓');
+        setSuccessMsg(
+          'M-PESA Phone Number Verified Successfully! ✓ ' +
+            (emailVerified
+              ? 'Both M-PESA Phone and Email are verified! Click "Proceed to Subscription Plan" below.'
+              : 'Please also verify your Email Address to proceed.')
+        );
       } else {
-        setErrorMsg(data.message || 'Invalid Phone OTP code.');
+        setErrorMsg(`[Step 2 Phone OTP] ${data.message || 'Invalid Phone OTP code.'}`);
       }
-    } catch (err) {
-      setErrorMsg('Failed to verify Phone OTP.');
+    } catch (err: any) {
+      console.error('Verify Phone OTP error:', err);
+      setErrorMsg(`[Step 2 Phone OTP] Verification failed: ${err?.message || 'Server connection error'}`);
     } finally {
       setIsVerifyingPhoneOtp(false);
     }
@@ -773,6 +887,12 @@ export const AuthView: React.FC<Props> = ({ onLoginSuccess }) => {
       setErrorMsg(`Please wait ${emailCooldown}s before requesting a new Email OTP.`);
       return;
     }
+    const targetEmail = (email || createdUser?.email || createdBusiness?.contactEmail || '').toLowerCase().trim();
+    if (!targetEmail) {
+      setErrorMsg('[Step 2 Email OTP] Email address is required. Please check your details in Step 1.');
+      return;
+    }
+
     setIsSendingEmailOtp(true);
     setErrorMsg('');
     setSuccessMsg('');
@@ -780,7 +900,7 @@ export const AuthView: React.FC<Props> = ({ onLoginSuccess }) => {
       const res = await fetch('/api/auth/send-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ target: email, type: 'EMAIL', recipientEmail: email }),
+        body: JSON.stringify({ target: targetEmail, type: 'EMAIL', recipientEmail: targetEmail }),
       });
       const data = await res.json();
       if (res.ok && data.success) {
@@ -788,29 +908,31 @@ export const AuthView: React.FC<Props> = ({ onLoginSuccess }) => {
         setEmailCooldown(60);
         if (data.resendStatus === 'SENT') {
           setEmailOtp(data.demoCode || '');
-          setSuccessMsg(`Email OTP sent via Resend to ${email}! Code: ${data.demoCode}`);
+          setSuccessMsg(`Email OTP sent via Resend to ${targetEmail}! Code: ${data.demoCode}`);
         } else if (data.demoCode) {
           setEmailOtp(data.demoCode);
-          setSuccessMsg(`Email verification OTP sent to ${email}! Code: ${data.demoCode}`);
+          setSuccessMsg(`Email verification OTP sent to ${targetEmail}! Code: ${data.demoCode}`);
         } else {
-          setSuccessMsg(`Email verification OTP dispatched to ${email}!`);
+          setSuccessMsg(`Email verification OTP dispatched to ${targetEmail}! Please check your inbox.`);
         }
       } else {
         if (data.cooldownRemainingSeconds) {
           setEmailCooldown(data.cooldownRemainingSeconds);
         }
-        setErrorMsg(data.message || 'Failed to send Email OTP');
+        setErrorMsg(`[Step 2 Email OTP] ${data.message || 'Failed to send Email OTP'}`);
       }
-    } catch (err) {
-      setErrorMsg('Network error while requesting Email OTP.');
+    } catch (err: any) {
+      console.error('Send Email OTP error:', err);
+      setErrorMsg(`[Step 2 Email OTP] Dispatch failed: ${err?.message || 'Server connection error'}. Please try again.`);
     } finally {
       setIsSendingEmailOtp(false);
     }
   };
 
   const handleVerifyEmailOtp = async () => {
+    const targetEmail = (email || createdUser?.email || createdBusiness?.contactEmail || '').toLowerCase().trim();
     if (!emailOtp) {
-      setErrorMsg('Please enter the 6-digit Email OTP code.');
+      setErrorMsg('[Step 2 Email OTP] Please enter the 6-digit Email OTP code.');
       return;
     }
     setIsVerifyingEmailOtp(true);
@@ -820,7 +942,7 @@ export const AuthView: React.FC<Props> = ({ onLoginSuccess }) => {
       const res = await fetch('/api/auth/verify-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ target: email, code: emailOtp }),
+        body: JSON.stringify({ target: targetEmail, code: emailOtp }),
       });
       const data = await res.json();
       if (res.ok && data.success) {
@@ -885,13 +1007,22 @@ export const AuthView: React.FC<Props> = ({ onLoginSuccess }) => {
         setCreatedUser(finalUser);
         setCreatedBusiness(finalBiz);
 
-        setSuccessMsg('🎉 Email Address Verified Successfully! Verified status saved to Firestore. Redirecting to Dashboard...');
-        clearDraftStorage();
+        if (mode === 'REGISTER') {
+          setSuccessMsg(
+            '🎉 Email Address Verified Successfully! ' +
+              (phoneVerified
+                ? 'Both M-PESA Phone and Email are verified! Click "Proceed to Subscription Plan" below.'
+                : 'Please also verify your M-PESA Phone Number to proceed.')
+          );
+        } else {
+          setSuccessMsg('🎉 Email Address Verified Successfully! Verified status saved to Firestore. Redirecting to Dashboard...');
+          clearDraftStorage();
 
-        // Allow navigation to DashboardView by calling onLoginSuccess
-        setTimeout(() => {
-          onLoginSuccess(finalUser, finalBiz);
-        }, 800);
+          // Allow navigation to DashboardView by calling onLoginSuccess
+          setTimeout(() => {
+            onLoginSuccess(finalUser, finalBiz);
+          }, 800);
+        }
       } else {
         setErrorMsg(data.message || 'Invalid Email OTP code. Please check your email and try again.');
       }
@@ -916,24 +1047,162 @@ export const AuthView: React.FC<Props> = ({ onLoginSuccess }) => {
 
   // Step 3 Plan Save
   const handleSelectPlan = async (tier: 'STARTER' | 'GROWTH' | 'ENTERPRISE') => {
-    setSelectedPlanTier(tier);
-    if (createdBusiness) {
-      const updatedBiz = { ...createdBusiness, subscriptionTier: tier };
-      setCreatedBusiness(updatedBiz);
-      await saveBusinessToFirestore(updatedBiz);
+    try {
+      setSelectedPlanTier(tier);
+      const bizToUpdate = createdBusiness || pendingBusiness;
+      if (bizToUpdate) {
+        const updatedBiz = { ...bizToUpdate, subscriptionTier: tier };
+        setCreatedBusiness(updatedBiz);
+        if (pendingBusiness) setPendingBusiness(updatedBiz);
+        try {
+          await saveBusinessToFirestore(updatedBiz);
+        } catch (e) {
+          console.warn('Non-blocking firestore sync on plan select:', e);
+        }
+      }
+      saveDraftToStorage({ registerStep: 4, selectedPlanTier: tier, billingCycle });
+      setRegisterStep(4);
+      setErrorMsg('');
+    } catch (err: any) {
+      console.error('Plan selection error:', err);
+      saveDraftToStorage({ registerStep: 4, selectedPlanTier: tier, billingCycle });
+      setRegisterStep(4);
+      setErrorMsg('');
     }
-    saveDraftToStorage({ registerStep: 4, selectedPlanTier: tier, billingCycle });
-    setRegisterStep(4);
-    setErrorMsg('');
   };
 
-  // Step 4 Complete Onboarding & Automated Merchant Verification Trigger
-  const handleCompleteOnboarding = async (e: React.FormEvent) => {
-    e.preventDefault();
+  // Polling effect for Step 4 subscription STK Push payment
+  useEffect(() => {
+    if (!stkCheckoutReqId || subPaymentStatus !== 'PENDING') return;
 
-    setIsSubmitting(true);
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/stkpush/query-status/${stkCheckoutReqId}`);
+        const data = await res.json();
+        if (data.success && data.status === 'SUCCESS') {
+          setSubPaymentStatus('SUCCESS');
+          const receipt = data.transaction?.mpesaReceipt || 'QHK91283X4';
+          setSubPaymentReceipt(receipt);
+          completeOnboardingAfterPayment(receipt);
+        } else if (data.success && (data.status === 'FAILED' || data.status === 'CANCELLED')) {
+          setSubPaymentStatus('FAILED');
+          setErrorMsg(data.transaction?.resultDesc || 'M-PESA STK Push request was cancelled or timed out.');
+        }
+      } catch (err) {
+        console.error('Subscription polling error in AuthView:', err);
+      }
+    }, 2000);
+
+    return () => clearInterval(interval);
+  }, [stkCheckoutReqId, subPaymentStatus]);
+
+  const calculatePlanPrice = (tier: 'STARTER' | 'GROWTH' | 'ENTERPRISE', cycle: 'MONTHLY' | 'ANNUAL') => {
+    if (tier === 'STARTER') return 0;
+    if (tier === 'GROWTH') return cycle === 'ANNUAL' ? 24000 : 2500;
+    if (tier === 'ENTERPRISE') return cycle === 'ANNUAL' ? 48000 : 5000;
+    return 2500;
+  };
+
+  // Step 4 STK Push Subscription Payment Handler
+  const handleInitiateSubscriptionPayment = async (e: React.FormEvent) => {
+    e.preventDefault();
     setErrorMsg('');
     setSuccessMsg('');
+
+    let cleanPhone = (subPaymentPhone || phone).trim().replace(/\s+/g, '');
+    if (!cleanPhone) {
+      setErrorMsg('Please enter a valid M-PESA phone number for subscription payment.');
+      return;
+    }
+    if (cleanPhone.startsWith('0')) cleanPhone = '+254' + cleanPhone.slice(1);
+    if (!cleanPhone.startsWith('+254') && !cleanPhone.startsWith('254')) {
+      cleanPhone = '+254' + cleanPhone;
+    }
+
+    const amount = calculatePlanPrice(selectedPlanTier, billingCycle);
+
+    // Free Starter Tier: Instant Activation without M-PESA charge
+    if (selectedPlanTier === 'STARTER' || amount === 0) {
+      await completeOnboardingAfterPayment('FREE_STARTER');
+      return;
+    }
+
+    // Paid Tier: Initiate STK Push via Backend
+    setIsInitiatingStkPush(true);
+    setSubPaymentStatus('PENDING');
+
+    try {
+      const res = await fetch('/api/subscriptions/upgrade', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-business-id': createdBusiness?.id || 'biz-' + Date.now(),
+        },
+        body: JSON.stringify({
+          planId: 'plan-' + selectedPlanTier.toLowerCase(),
+          tier: selectedPlanTier,
+          phone: cleanPhone,
+          billingCycle,
+          amountKes: amount,
+        }),
+      });
+
+      const data = await res.json();
+      setIsInitiatingStkPush(false);
+
+      if (data.success && data.checkoutRequestId) {
+        setStkCheckoutReqId(data.checkoutRequestId);
+        setSubPaymentStatus('PENDING');
+        setSuccessMsg(`M-PESA STK Push prompt sent to ${cleanPhone}. Please enter your M-PESA PIN on your phone.`);
+      } else {
+        setSubPaymentStatus('FAILED');
+        setErrorMsg(data.message || 'Failed to initiate M-PESA STK Push payment.');
+      }
+    } catch (err: any) {
+      setIsInitiatingStkPush(false);
+      setSubPaymentStatus('FAILED');
+      setErrorMsg(err.message || 'Network error initiating M-PESA payment.');
+    }
+  };
+
+  // Simulate PIN entry or cancellation in Sandbox/Preview testing
+  const handleSimulateSubPinAction = async (action: 'ENTER_PIN' | 'CANCEL') => {
+    if (!stkCheckoutReqId) return;
+    setIsSimulatingSubPin(true);
+
+    try {
+      const res = await fetch('/api/stkpush/simulate-action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          checkoutRequestId: stkCheckoutReqId,
+          action,
+          pin: '1234',
+        }),
+      });
+
+      const data = await res.json();
+      setIsSimulatingSubPin(false);
+
+      if (action === 'ENTER_PIN' && data.success) {
+        const receipt = data.transaction?.mpesaReceipt || 'QHK91283X4';
+        setSubPaymentStatus('SUCCESS');
+        setSubPaymentReceipt(receipt);
+        await completeOnboardingAfterPayment(receipt);
+      } else {
+        setSubPaymentStatus('FAILED');
+        setErrorMsg(data.message || 'STK Push payment request was cancelled on phone screen.');
+      }
+    } catch (err) {
+      setIsSimulatingSubPin(false);
+      console.error('STK simulation error:', err);
+    }
+  };
+
+  // Complete Onboarding & Activate Merchant Business
+  const completeOnboardingAfterPayment = async (mpesaReceiptCode?: string) => {
+    setIsSubmitting(true);
+    setErrorMsg('');
 
     try {
       const bizId = createdBusiness?.id || pendingBusiness?.id || ('biz-' + Date.now());
@@ -956,20 +1225,33 @@ export const AuthView: React.FC<Props> = ({ onLoginSuccess }) => {
       const pmType = paymentType === 'PAYBILL' ? 'PAYBILL' : paymentType === 'BANK' ? 'BANK' : 'TILL_NUMBER';
       const selectedShortcode = paymentType === 'PAYBILL' ? (paybillNumber || '522522') : (tillNumber || '174379');
 
+      const maxBr = selectedPlanTier === 'ENTERPRISE' ? 999 : selectedPlanTier === 'GROWTH' ? 5 : 1;
+      const maxSt = selectedPlanTier === 'ENTERPRISE' ? 999 : selectedPlanTier === 'GROWTH' ? 10 : 3;
+      const maxTx = selectedPlanTier === 'ENTERPRISE' ? 50000 : selectedPlanTier === 'GROWTH' ? 5000 : 500;
+
       const updatedBiz: Business = {
         id: bizId,
         name: businessName || createdBusiness?.name || 'Merchant HQ',
         category: category || createdBusiness?.category || 'Retail Shop',
         paybill: paybillNumber || createdBusiness?.paybill || '522522',
         tillNumber: tillNumber || createdBusiness?.tillNumber || '174379',
-        subscriptionTier: selectedPlanTier || createdBusiness?.subscriptionTier || 'GROWTH',
-        subscriptionRenewalDate: createdBusiness?.subscriptionRenewalDate || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+        subscriptionTier: selectedPlanTier,
+        subscriptionRenewalDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
         subscriptionStatus: 'ACTIVE',
-        maxBranches: createdBusiness?.maxBranches || 5,
-        maxStaff: createdBusiness?.maxStaff || 10,
-        maxTransactions: createdBusiness?.maxTransactions || 500000,
-        unlockedFeatures: createdBusiness?.unlockedFeatures || ['STK_PUSH', 'AUTO_DISCON', 'ANALYTICS', 'MULTI_BRANCH'],
-        status: 'PENDING_VERIFICATION',
+        maxBranches: maxBr,
+        maxStaff: maxSt,
+        maxTransactions: maxTx,
+        unlockedFeatures: selectedPlanTier === 'ENTERPRISE'
+          ? ['STK_PUSH', 'AUTO_DISCON', 'ANALYTICS', 'MULTI_BRANCH', 'API_ACCESS', 'PRIORITY_SUPPORT']
+          : selectedPlanTier === 'GROWTH'
+          ? ['STK_PUSH', 'AUTO_DISCON', 'ANALYTICS', 'MULTI_BRANCH']
+          : ['STK_PUSH', 'BASIC_ANALYTICS'],
+        status: 'ACTIVE',
+        verificationStatus: 'VERIFIED',
+        emailVerified: true,
+        phoneVerified: true,
+        onboardingStep: 4,
+        onboardingCompleted: true,
         createdAt: createdBusiness?.createdAt || new Date().toISOString(),
         address: location || createdBusiness?.address || 'Nairobi, Kenya',
         kraPin: kraPin || createdBusiness?.kraPin || 'P051928374Z',
@@ -1017,21 +1299,20 @@ export const AuthView: React.FC<Props> = ({ onLoginSuccess }) => {
       setVerificationProgress(10);
       setVerificationCheckStep(1);
 
-      // Simulate automated verification checks sequentially
       setTimeout(() => {
         setVerificationProgress(35);
         setVerificationCheckStep(2);
-      }, 900);
+      }, 700);
 
       setTimeout(() => {
         setVerificationProgress(65);
         setVerificationCheckStep(3);
-      }, 1800);
+      }, 1400);
 
       setTimeout(() => {
         setVerificationProgress(90);
         setVerificationCheckStep(4);
-      }, 2700);
+      }, 2100);
 
       setTimeout(async () => {
         setVerificationProgress(100);
@@ -1042,29 +1323,24 @@ export const AuthView: React.FC<Props> = ({ onLoginSuccess }) => {
             body: JSON.stringify({ businessId: updatedBiz.id, kraPin: updatedBiz.kraPin }),
           });
           const data = await res.json();
-          if (data.success && data.business) {
-            const verifiedBiz = { ...data.business, status: 'ACTIVE' as const };
-            await saveBusinessToFirestore(verifiedBiz);
-
-            clearDraftStorage();
-            setSuccessMsg('Merchant Workspace Verified & Activated! Redirecting to Dashboard...');
-            setTimeout(() => {
-              onLoginSuccess(data.user || createdUser, verifiedBiz);
-            }, 1000);
-          } else {
-            // Fallback activate
-            const verifiedBiz = { ...updatedBiz, status: 'ACTIVE' as const };
-            await saveBusinessToFirestore(verifiedBiz);
-            clearDraftStorage();
-            onLoginSuccess(createdUser, verifiedBiz);
-          }
-        } catch (verErr) {
-          const verifiedBiz = { ...updatedBiz, status: 'ACTIVE' as const };
+          const verifiedBiz = (data.success && data.business) ? { ...data.business, status: 'ACTIVE' as const } : updatedBiz;
           await saveBusinessToFirestore(verifiedBiz);
+
           clearDraftStorage();
-          onLoginSuccess(createdUser, verifiedBiz);
+          setIsSubmitting(false);
+          setIsVerifyingMerchant(false);
+          setSuccessMsg('Merchant Workspace Verified & Activated! Redirecting to Dashboard...');
+
+          setTimeout(() => {
+            onLoginSuccess(activeUser, verifiedBiz);
+          }, 800);
+        } catch (verErr) {
+          clearDraftStorage();
+          setIsSubmitting(false);
+          setIsVerifyingMerchant(false);
+          onLoginSuccess(activeUser, updatedBiz);
         }
-      }, 3600);
+      }, 2800);
     } catch (err: any) {
       console.error('Onboarding completion error:', err);
       setErrorMsg('An error occurred during payment channel configuration. Please try again.');
@@ -1084,8 +1360,14 @@ export const AuthView: React.FC<Props> = ({ onLoginSuccess }) => {
           <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-emerald-500 to-emerald-400 text-slate-950 flex items-center justify-center font-black text-lg mx-auto shadow-md shadow-emerald-500/20">
             P
           </div>
-          <h2 className="text-lg font-bold text-white tracking-tight">
+          <h2 className="text-lg font-bold text-white tracking-tight flex items-center justify-center gap-2">
             {mode === 'LOGIN' && 'Sign In to PesaRequest'}
+            {mode === 'ADMIN_LOGIN' && (
+              <>
+                <Crown className="w-5 h-5 text-amber-400 shrink-0 animate-pulse" />
+                <span>Super Admin Portal Sign In</span>
+              </>
+            )}
             {mode === 'LOGIN_VERIFY_OTP' && 'Email Security Verification'}
             {mode === 'RESET_PASSWORD' && 'Reset Merchant Password'}
             {mode === 'EMAIL_VERIFICATION' && 'Dedicated Email Verification'}
@@ -1093,6 +1375,7 @@ export const AuthView: React.FC<Props> = ({ onLoginSuccess }) => {
           </h2>
           <p className="text-[11px] text-slate-400 max-w-xs mx-auto leading-snug">
             {mode === 'LOGIN' && 'Multi-tenant M-PESA payment requests & automated STK Push engine.'}
+            {mode === 'ADMIN_LOGIN' && 'Master Platform Console authentication for system administrators.'}
             {mode === 'LOGIN_VERIFY_OTP' && 'Verify account ownership via the 6-digit OTP sent to your email.'}
             {mode === 'RESET_PASSWORD' && 'Enter account email to receive password reset link.'}
             {mode === 'EMAIL_VERIFICATION' && 'Enter the 6-digit OTP code sent to your email to activate your account.'}
@@ -1134,9 +1417,27 @@ export const AuthView: React.FC<Props> = ({ onLoginSuccess }) => {
 
         {/* Status Banners */}
         {errorMsg && (
-          <div className="p-2.5 bg-rose-950/60 border border-rose-800/80 rounded-xl text-xs text-rose-300 flex items-start gap-2 animate-in fade-in">
-            <AlertCircle className="w-3.5 h-3.5 text-rose-400 shrink-0 mt-0.5" />
-            <div className="flex-1 font-medium leading-snug text-[11px]">{errorMsg}</div>
+          <div className="p-3 bg-rose-950/80 border border-rose-600/90 rounded-2xl text-xs text-rose-200 shadow-xl animate-in fade-in space-y-1.5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5 font-bold text-rose-300">
+                <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+                <span className="uppercase tracking-wider text-[10px] font-extrabold bg-rose-900/80 text-rose-200 px-2 py-0.5 rounded-md border border-rose-700/60">
+                  {errorMsg.includes('[') && errorMsg.includes(']')
+                    ? errorMsg.slice(errorMsg.indexOf('[') + 1, errorMsg.indexOf(']'))
+                    : 'Action Required'}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setErrorMsg('')}
+                className="text-[10px] text-rose-400 hover:text-white underline font-semibold cursor-pointer"
+              >
+                Dismiss
+              </button>
+            </div>
+            <div className="text-[11px] font-medium leading-relaxed text-rose-100 pl-5">
+              {errorMsg.includes(']') ? errorMsg.slice(errorMsg.indexOf(']') + 1).replace(/^(\s*->\s*|\s*:\s*)/, '') : errorMsg}
+            </div>
           </div>
         )}
 
@@ -1245,19 +1546,129 @@ export const AuthView: React.FC<Props> = ({ onLoginSuccess }) => {
               <span>Sign In with Google</span>
             </button>
 
-            {/* Registration link */}
-            <div className="pt-1 text-center">
+            {/* Registration & Admin Portal link options */}
+            <div className="pt-2 border-t border-slate-800/80 space-y-2 text-center">
               <button
                 type="button"
                 onClick={() => {
-                  setMode('REGISTER');
-                  setRegisterStep(1);
+                  setMode('ADMIN_LOGIN');
+                  setAdminEmail('keptonotieno@gmail.com');
                   setErrorMsg('');
                   setSuccessMsg('');
                 }}
-                className="text-[11px] text-emerald-400 hover:text-emerald-300 font-bold transition hover:underline cursor-pointer"
+                className="w-full py-2 px-3 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs font-black transition flex items-center justify-center gap-2 cursor-pointer shadow-sm hover:border-amber-500/50"
               >
-                New Merchant? Register Business Account
+                <Crown className="w-4 h-4 text-amber-400 shrink-0" />
+                <span>Super Admin Portal Sign In</span>
+              </button>
+
+              <div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMode('REGISTER');
+                    setRegisterStep(1);
+                    setErrorMsg('');
+                    setSuccessMsg('');
+                  }}
+                  className="text-[11px] text-emerald-400 hover:text-emerald-300 font-bold transition hover:underline cursor-pointer"
+                >
+                  New Merchant? Register Business Account
+                </button>
+              </div>
+            </div>
+          </form>
+        )}
+
+        {/* ----------------- MODE: ADMIN_LOGIN ----------------- */}
+        {mode === 'ADMIN_LOGIN' && (
+          <form onSubmit={handleAdminLogin} className="space-y-3.5">
+            {/* Admin Badge */}
+            <div className="p-3 bg-amber-950/40 border border-amber-500/40 rounded-xl space-y-1 text-left">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
+                  <Crown className="w-4 h-4 text-amber-400" /> System Admin Authentication
+                </span>
+                <span className="px-2 py-0.5 rounded-full text-[9px] font-extrabold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                  SUPER ADMIN
+                </span>
+              </div>
+              <p className="text-[11px] text-amber-200/80 leading-snug">
+                Master credentials control all multi-tenant businesses, M-PESA paybills, subscription tiers, and system logs.
+              </p>
+            </div>
+
+            {/* Quick Fill Credentials Helper */}
+            <button
+              type="button"
+              onClick={() => {
+                setAdminEmail('keptonotieno@gmail.com');
+                setAdminPassword('kepton@12Romez');
+                setSuccessMsg('⚡ Super Admin credentials pre-filled!');
+              }}
+              className="w-full py-2 px-2.5 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 rounded-xl text-[10px] font-extrabold text-amber-300 flex items-center justify-center gap-1.5 transition cursor-pointer"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+              <span>Auto-Fill Admin Credentials (keptonotieno@gmail.com)</span>
+            </button>
+
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-300 mb-1">Super Admin Email *</label>
+              <div className="relative">
+                <input
+                  type="email"
+                  required
+                  value={adminEmail}
+                  onChange={(e) => setAdminEmail(e.target.value)}
+                  placeholder="keptonotieno@gmail.com"
+                  className="w-full h-10 pl-9 pr-3 rounded-xl border border-amber-500/40 bg-slate-950/90 text-xs text-white placeholder-slate-500 outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400 transition font-mono"
+                />
+                <Mail className="w-3.5 h-3.5 text-amber-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-300 mb-1">Admin Security Password *</label>
+              <div className="relative">
+                <input
+                  type="password"
+                  required
+                  value={adminPassword}
+                  onChange={(e) => setAdminPassword(e.target.value)}
+                  placeholder="kepton@12Romez"
+                  className="w-full h-10 pl-9 pr-3 rounded-xl border border-amber-500/40 bg-slate-950/90 text-xs text-white placeholder-slate-500 outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400 transition font-mono"
+                />
+                <Lock className="w-3.5 h-3.5 text-amber-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="w-full h-10 bg-amber-500 hover:bg-amber-400 active:scale-[0.99] text-slate-950 font-black text-xs rounded-xl shadow-lg shadow-amber-500/20 flex items-center justify-center gap-2 transition cursor-pointer"
+            >
+              {isSubmitting ? (
+                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <>
+                  <Crown className="w-4 h-4" />
+                  <span>Authenticate & Access Admin Portal</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </>
+              )}
+            </button>
+
+            <div className="pt-2 text-center">
+              <button
+                type="button"
+                onClick={() => {
+                  setMode('LOGIN');
+                  setErrorMsg('');
+                  setSuccessMsg('');
+                }}
+                className="text-[11px] text-slate-400 hover:text-white transition hover:underline font-semibold cursor-pointer"
+              >
+                ← Back to Standard Merchant Sign In
               </button>
             </div>
           </form>
@@ -1975,9 +2386,9 @@ export const AuthView: React.FC<Props> = ({ onLoginSuccess }) => {
                   {[
                     {
                       tier: 'STARTER' as const,
-                      name: 'Starter Tier',
-                      monthlyPrice: 'KES 1,000 / mo',
-                      annualPrice: 'KES 800 / mo (Billed Annually)',
+                      name: 'Free Starter Plan',
+                      monthlyPrice: 'KES 0 / 30 Days (Free)',
+                      annualPrice: 'KES 0 / 30 Days (Free)',
                       branches: '1 HQ Branch',
                       staff: 'Up to 3 Staff',
                       color: 'border-slate-800 bg-slate-950',
@@ -2065,105 +2476,164 @@ export const AuthView: React.FC<Props> = ({ onLoginSuccess }) => {
               </div>
             )}
 
-            {/* STEP 4: Configure Payment Channel & Launch Merchant Verification */}
+            {/* STEP 4: Review Plan, M-PESA STK Push Subscription Payment & Activation */}
             {registerStep === 4 && (
-              <form onSubmit={handleCompleteOnboarding} className="space-y-4">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">M-PESA Channel Type *</label>
-                  <div className="grid grid-cols-3 gap-2">
-                    {[
-                      { id: 'BUY_GOODS', label: 'Buy Goods Till' },
-                      { id: 'PAYBILL', label: 'Paybill Shortcode' },
-                      { id: 'BANK', label: 'Bank Account' },
-                    ].map((m) => (
+              <div className="space-y-6">
+                <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-4">
+                  <div className="flex justify-between items-center text-xs font-bold uppercase tracking-wider text-emerald-400">
+                    <span className="flex items-center gap-1.5">
+                      <CreditCard className="w-4 h-4 text-emerald-400" />
+                      Subscription Payment & Review
+                    </span>
+                    <span className="text-[10px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded-full font-mono">
+                      Step 4 of 4
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                    <div className="p-3.5 bg-slate-900 rounded-xl border border-slate-800 space-y-1">
+                      <div className="text-slate-400 text-[11px]">Selected Business Plan</div>
+                      <div className="font-bold text-white text-sm uppercase">
+                        {selectedPlanTier} Plan ({billingCycle})
+                      </div>
+                      <div className="text-emerald-400 font-extrabold text-sm">
+                        KES {calculatePlanPrice(selectedPlanTier, billingCycle).toLocaleString()}
+                      </div>
+                    </div>
+
+                    <div className="p-3.5 bg-slate-900 rounded-xl border border-slate-800 space-y-1">
+                      <div className="text-slate-400 text-[11px]">Payment Destination</div>
+                      <div className="font-bold text-white">PesaRequest Billing Gateway</div>
+                      <div className="text-emerald-400 font-mono text-xs">Paybill: 522522 (Account: SUB-{selectedPlanTier})</div>
+                    </div>
+                  </div>
+
+                  {selectedPlanTier === 'STARTER' ? (
+                    <div className="p-4 rounded-xl bg-emerald-950/40 border border-emerald-500/30 text-xs text-emerald-300 space-y-3">
+                      <div className="flex items-center gap-2">
+                        <CheckCircle className="w-5 h-5 text-emerald-400 shrink-0" />
+                        <div>
+                          <span className="font-bold text-sm text-white">Free Starter Tier Selected</span>
+                          <p className="text-slate-300 text-xs mt-0.5">
+                            No upfront payment required today. Click below to activate your 30-day Free Trial dashboard immediately.
+                          </p>
+                        </div>
+                      </div>
                       <button
-                        key={m.id}
                         type="button"
-                        onClick={() => setPaymentType(m.id as any)}
-                        className={`py-2 px-2 rounded-xl border text-xs font-bold transition cursor-pointer ${
-                          paymentType === m.id
-                            ? 'border-emerald-500 bg-emerald-500/15 text-emerald-400'
-                            : 'border-slate-800 bg-slate-950 text-slate-400 hover:text-white'
-                        }`}
+                        onClick={() => completeOnboardingAfterPayment('FREE_STARTER_TRIAL')}
+                        className="w-full py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold text-xs rounded-xl shadow-lg transition flex items-center justify-center gap-2 cursor-pointer"
                       >
-                        {m.label}
+                        <Sparkles className="w-4 h-4 text-slate-950" />
+                        <span>Activate Free Trial & Launch Dashboard</span>
                       </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">Channel Label / Counter Name *</label>
-                  <input
-                    type="text"
-                    required
-                    value={paymentName}
-                    onChange={(e) => setPaymentName(e.target.value)}
-                    placeholder="e.g. Main HQ Counter Till"
-                    className="w-full px-3 py-2.5 rounded-xl border border-slate-800 bg-slate-950 text-xs text-white outline-none focus:ring-2 focus:ring-emerald-500"
-                  />
-                </div>
-
-                {paymentType === 'BUY_GOODS' && (
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-300 mb-1">Till Number *</label>
-                    <input
-                      type="text"
-                      required
-                      value={tillNumber}
-                      onChange={(e) => setTillNumber(e.target.value)}
-                      placeholder="e.g. 174379"
-                      className="w-full px-3 py-2.5 rounded-xl border border-slate-800 bg-slate-950 font-mono text-xs text-white outline-none focus:ring-2 focus:ring-emerald-500"
-                    />
-                  </div>
-                )}
-
-                {paymentType === 'PAYBILL' && (
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-300 mb-1">Paybill Business No *</label>
-                      <input
-                        type="text"
-                        required
-                        value={paybillNumber}
-                        onChange={(e) => setPaybillNumber(e.target.value)}
-                        placeholder="e.g. 522522"
-                        className="w-full px-3 py-2.5 rounded-xl border border-slate-800 bg-slate-950 font-mono text-xs text-white outline-none focus:ring-2 focus:ring-emerald-500"
-                      />
                     </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-300 mb-1">Default Account No *</label>
-                      <input
-                        type="text"
-                        required
-                        value={accountNumber}
-                        onChange={(e) => setAccountNumber(e.target.value)}
-                        placeholder="e.g. STORE-001"
-                        className="w-full px-3 py-2.5 rounded-xl border border-slate-800 bg-slate-950 font-mono text-xs text-white outline-none focus:ring-2 focus:ring-emerald-500"
-                      />
-                    </div>
-                  </div>
-                )}
+                  ) : (
+                    <form onSubmit={handleInitiateSubscriptionPayment} className="space-y-4 pt-1">
+                      <div className="space-y-2">
+                        <label className="block text-xs font-semibold text-slate-300">
+                          M-PESA Phone Number for Subscription Payment *
+                        </label>
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            required
+                            value={subPaymentPhone}
+                            onChange={(e) => setSubPaymentPhone(e.target.value)}
+                            placeholder="e.g. 0712345678"
+                            className="flex-1 px-3.5 py-2.5 rounded-xl border border-slate-800 bg-slate-900 font-mono text-xs text-white outline-none focus:ring-2 focus:ring-emerald-500"
+                          />
+                          <button
+                            type="submit"
+                            disabled={isInitiatingStkPush || subPaymentStatus === 'PENDING' || subPaymentStatus === 'SUCCESS'}
+                            className="px-5 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold text-xs rounded-xl shadow-md transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50 shrink-0"
+                          >
+                            {isInitiatingStkPush ? (
+                              <RefreshCw className="w-4 h-4 animate-spin" />
+                            ) : subPaymentStatus === 'SUCCESS' ? (
+                              <>
+                                <CheckCircle className="w-4 h-4 text-slate-950" />
+                                <span>Paid</span>
+                              </>
+                            ) : (
+                              <>
+                                <Send className="w-4 h-4" />
+                                <span>Pay KES {calculatePlanPrice(selectedPlanTier, billingCycle).toLocaleString()} via M-PESA</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      </div>
 
-                {paymentType === 'BANK' && (
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-300 mb-1">Bank Account Number *</label>
-                    <input
-                      type="text"
-                      required
-                      value={accountNumber}
-                      onChange={(e) => setAccountNumber(e.target.value)}
-                      placeholder="e.g. 1102938475"
-                      className="w-full px-3 py-2.5 rounded-xl border border-slate-800 bg-slate-950 font-mono text-xs text-white outline-none focus:ring-2 focus:ring-emerald-500"
-                    />
-                  </div>
-                )}
+                      {/* STK Push Waiting Card & Simulator */}
+                      {subPaymentStatus === 'PENDING' && (
+                        <div className="p-4 rounded-2xl bg-amber-950/40 border border-amber-500/40 space-y-3 text-left animate-pulse text-xs">
+                          <div className="flex items-center gap-2 font-bold text-amber-400">
+                            <RefreshCw className="w-4 h-4 animate-spin text-amber-400" />
+                            <span>M-PESA STK Push Sent to {subPaymentPhone}</span>
+                          </div>
+                          <p className="text-[11px] text-slate-300">
+                            Check your phone screen and enter your M-PESA PIN to authorize payment of <strong className="text-amber-300 font-mono">KES {calculatePlanPrice(selectedPlanTier, billingCycle).toLocaleString()}</strong>.
+                          </p>
 
-                <div className="p-3 bg-emerald-950/30 border border-emerald-500/20 rounded-2xl text-[11px] text-emerald-300/90 flex items-start gap-2">
-                  <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-                  <div>
-                    <span className="font-bold">Automated Merchant Verification:</span> Submitting completes registration and immediately triggers Safaricom Daraja KYC & KRA PIN verification.
-                  </div>
+                          <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 space-y-2">
+                            <div className="text-[11px] font-bold text-slate-300 flex items-center gap-1.5">
+                              <Sparkles className="w-3.5 h-3.5 text-emerald-400" /> Preview Testing Simulator
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                disabled={isSimulatingSubPin}
+                                onClick={() => handleSimulateSubPinAction('ENTER_PIN')}
+                                className="flex-1 py-2 px-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs rounded-lg transition cursor-pointer shadow-md"
+                              >
+                                {isSimulatingSubPin ? 'Authorizing PIN...' : 'Simulate Enter PIN (1234)'}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleSimulateSubPinAction('CANCEL')}
+                                className="py-2 px-3 bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium text-xs rounded-lg transition cursor-pointer"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {subPaymentStatus === 'FAILED' && (
+                        <div className="p-4 rounded-xl bg-rose-950/40 border border-rose-500/40 text-xs text-rose-300 space-y-2">
+                          <div className="flex items-center gap-2 font-bold text-rose-400">
+                            <AlertCircle className="w-4 h-4 text-rose-400" />
+                            <span>Payment Prompt Failed or Timed Out</span>
+                          </div>
+                          <p className="text-[11px] text-slate-300">
+                            The STK push prompt timed out or was cancelled on the phone. You can retry the STK push or update the phone number.
+                          </p>
+                          <button
+                            type="button"
+                            onClick={handleInitiateSubscriptionPayment}
+                            className="px-4 py-2 bg-rose-500 hover:bg-rose-400 text-white font-bold text-xs rounded-lg transition flex items-center gap-1.5 cursor-pointer"
+                          >
+                            <RotateCcw className="w-3.5 h-3.5" />
+                            <span>Retry M-PESA STK Push</span>
+                          </button>
+                        </div>
+                      )}
+
+                      {subPaymentStatus === 'SUCCESS' && (
+                        <div className="p-4 rounded-xl bg-emerald-950/50 border border-emerald-500/40 text-xs text-emerald-300 flex items-center gap-3">
+                          <CheckCircle className="w-5 h-5 text-emerald-400 shrink-0" />
+                          <div>
+                            <span className="font-bold text-sm text-white">Subscription Payment Confirmed!</span>
+                            <div className="text-xs text-emerald-300 font-mono mt-0.5">
+                              Receipt Code: {subPaymentReceipt}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </form>
+                  )}
                 </div>
 
                 <div className="flex justify-between items-center pt-2">
@@ -2172,25 +2642,10 @@ export const AuthView: React.FC<Props> = ({ onLoginSuccess }) => {
                     onClick={() => setRegisterStep(3)}
                     className="text-xs text-slate-400 hover:text-white underline cursor-pointer"
                   >
-                    ← Back to Plan
-                  </button>
-
-                  <button
-                    type="submit"
-                    disabled={isSubmitting}
-                    className="px-6 py-3.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold text-xs rounded-xl shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2 transition cursor-pointer"
-                  >
-                    {isSubmitting ? (
-                      <RefreshCw className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <>
-                        <Sparkles className="w-4 h-4" />
-                        <span>Save & Trigger Merchant Verification</span>
-                      </>
-                    )}
+                    ← Back to Subscription Plan
                   </button>
                 </div>
-              </form>
+              </div>
             )}
           </div>
         )}

@@ -771,7 +771,47 @@ export const PaymentMethodsView: React.FC<Props> = ({
         </div>
       )}
 
-      {/* Header Banner */}
+      {/* Integration Initialization System Wizard Banner */}
+      <div className="p-5 rounded-3xl bg-slate-900 border border-emerald-500/40 space-y-3 shadow-xl">
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-400">
+              <Sparkles className="w-6 h-6 text-emerald-400 animate-pulse" />
+            </div>
+            <div>
+              <div className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-400 flex items-center gap-1.5">
+                <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                Business Owner Integration Control System
+              </div>
+              <h3 className="text-sm font-bold text-white">
+                Integration Initialization & Configuration System Wizard
+              </h3>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => openAddModal('SAFARICOM_MPESA')}
+              className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold text-xs rounded-xl shadow-lg transition flex items-center gap-1.5 cursor-pointer"
+            >
+              <Sparkles className="w-4 h-4 text-slate-950" />
+              <span>Launch M-PESA Wizard</span>
+            </button>
+
+            <button
+              onClick={() => openAddModal('STRIPE')}
+              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl shadow-md transition flex items-center gap-1.5 cursor-pointer"
+            >
+              <Globe className="w-4 h-4 text-white" />
+              <span>Configure Global Gateway</span>
+            </button>
+          </div>
+        </div>
+
+        <p className="text-xs text-slate-400 leading-relaxed">
+          As the business owner, you can change, update, test, and activate your M-PESA Till Numbers, Paybills, Pochi la Biashara, Stripe, PayPal, Flutterwave, and Pesapal channels at any time. All credentials are AES-256 encrypted and verified in real time.
+        </p>
+      </div>
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-black text-slate-900 dark:text-white flex items-center gap-2.5">
