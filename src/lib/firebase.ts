@@ -10,7 +10,7 @@ import {
   sendPasswordResetEmail,
   AuthError,
 } from 'firebase/auth';
-import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
+import { initializeFirestore, getFirestore, doc, getDocFromServer } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import localFirebaseConfig from '../../firebase-applet-config.json';
 
@@ -28,6 +28,11 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
+
+// Initialize Firestore with force long-polling to prevent proxy/iframe streaming connection timeout
+initializeFirestore(app, {
+  experimentalForceLongPolling: true,
+}, firebaseConfig.firestoreDatabaseId);
 
 // CRITICAL: Must include firestoreDatabaseId
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
